@@ -3,76 +3,8 @@
 <head>
 <meta charset="utf-8">
 <title>I NEED HELP</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no"/>
-<!--360 webkit-->
-<meta name="renderer" content="webkit">
-<!--Baidu no-transform-->
-<meta http-equiv="Cache-Control" content="no-transform " />
-<!--No user-scalable-->
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no"/>
-<link rel="stylesheet" href="http://cdn.bootcss.com/bootstrap/3.3.7/css/bootstrap.min.css">
-<link rel="stylesheet" href="http://cdn.bootcss.com/font-awesome/4.7.0/css/font-awesome.min.css">
-<link rel="stylesheet" href="http://cdn.bootcss.com/animate.css/3.5.2/animate.css">
-<link rel="stylesheet" href="https://cdn.bootcss.com/highlight.js/9.11.0/styles/mono-blue.min.css">
+<link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAg..." >
 <style>
-a{
-	color:#AFAFAF;
-}
-a:hover {
-	text-decoration: none;
-	-webkit-transition: 0.2s;
-    -moz-transition: 0.2s;
-    transition: 0.2s;
-}
-a:focus,a:active{
-	text-decoration: none;
-	outline:0 !important;
-}
-* {
-	margin: 0;
-	padding: 0;
-}
-.navbar {
-	border-radius: 0px;
-	border: none;
-}
-.btn-mini {
-    background-color: #555;
-    color: #f3f3f3;
-    font-size: 11px;
-    padding: 4px 8px 2px 8px;
-    box-shadow: 0 4px 8px 0 rgba(7,17,27,.4);
-}
-.btn-mini2 {
-	background-color: transparent;
-	border: 1px solid #333;
-    color: #000;
-    font-size: 11px;
-    padding: 4px 8px 2px 8px;
-    box-shadow: 0 4px 8px 0 rgba(7,17,17,.4);
-}
-.btn-mini2:hover{
-    transition: all .2s;
-    background-color: #000;
-    color: #fff;
-    font-size: 11px;
-}
-.btn-mini:hover{
-    transition: all .6s;
-    background-color: #000;
-    color: #fff;
-    font-size: 11px;
-}
-.btn-mini:active{
-    transition: all .3s;
-    background-color: #000;
-    color: #fcfcfc;
-    font-size: 11px;
-}
-blockquote{
-	padding: 10px 10px;
-	font-size: 11px;
-}
 code {
 	font-family: Consolas,Menlo,Monaco,Lucida Console,Liberation Mono,DejaVu Sans Mono,Bitstream Vera Sans Mono,Courier New,monospace,sans-serif;
 	background-color: #EEE;
@@ -95,64 +27,6 @@ kbd {
 	line-height: 1.4;
 	white-space: nowrap;
 }
-html {
-  position: relative;
-  min-height: 100%;
-}
-body {
-  margin-bottom: 60px;
-  background-color: #EDEFF0;
-  background-size:cover;
-}
-.breadcrumb{
-	background-color: #fff;
-	border-radius: 5px;
-	margin:0;
-}
-table{
-    font-size: 11px;
-}
-.nav{
-	display:block;
-	background-color: #fff;
-	border-radius: 5px;
-	padding:0px 20px 20px 20px;
-	margin:20px 0px 20px 0px;
-	z-index:100;
-}
-.nav li{
-	margin:10px;
-}
-.nav li a{
-	font-size:15px;
-	color:#555;
-	padding:3px 5px 3px 5px;
-	border-radius: 3px;
-	-webkit-transition: all .6s;
-	-moz-transition: all .6s;
-	-o-transition: all .6s;
-	transition: all .6s;
-}
-.nav li a:active{
-	text-decoration: none;
-}
-.nav li a:hover{
-	color:#FFF;
-	background-color:#4096EE;
-}
-.page-header {
-	padding-bottom: 10px;
-	margin: 30px 0;
-}
-h4{
-	font-size:18px;
-}
-h6{
-	margin:20px 0px 20px 0px;
-	font-weight:bold;
-	font-size: 14px;
-	color: #8C8C8C;
-}
 pre, .code{
 	background-color: #ECECEC;
 	color:#000;
@@ -160,67 +34,6 @@ pre, .code{
 	border-radius: 5px;
 	font-family: Consolas,Courier,Courier New,monospace,serif;
 	font-size: 13px;
-}
-#FontAwesome-Icons i.fa{
-    font-size: 35px;
-}
-textarea.code{
-	-webkit-appearance: none;
-    resize: none;
-    width: 100%;
-    line-height: 25px;
-    outline: none;
-    padding: 8px 8px;
-}
-/***footer***/
-footer {
-    padding: 30px 0;
-    line-height: 25px;
-	background-color: #1f2d3d;
-	position: absolute;
-  	bottom: 0;
-  	width: 100%;
-}
-.fa{
-	color:#5C5C5C;
-}
-.met-online {
-    display: none;
-    position: fixed;
-    right: 10px;
-    bottom: 10px;
-    z-index: 100;
-    overflow: hidden;
-}
-.met-online ul.blocks {
-    margin: 0;
-    transition: all 0.5s;
-    -moz-transition: all 0.5s;
-    -webkit-transition: all 0.5s;
-    -o-transition: all 0.5s;
-    overflow: hidden;
-}
-.met-online ul.blocks li {
-    clear: both;
-    margin-bottom: 5px;
-
-}
-.met-online ul.blocks li button{
-    border: none;
-    background-color: rgba(64, 150, 238, 0.95);
-    padding: 0;
-    width: 35px;
-    height: 35px;
-}
-.met-online ul.blocks li button i{
-    color: #fff;
-}
-.met-online ul.blocks li button:hover{
-    transition: all 0.5s;
-    -moz-transition: all 0.5s;
-    -webkit-transition: all 0.5s;
-    -o-transition: all 0.5s;
-    background-color: rgba(64, 150, 238, 0.75);
 }
 </style>
 </head>
@@ -238,8 +51,6 @@ footer {
 
 <div class="container">
 	<div class="row">
-
-
 		<div class="col-md-12 breadcrumb">
 			<ol class="breadcrumb">
 			  <li><a href="#Bash"><i class="fa fa-terminal" aria-hidden="true"></i> Bash</a></li>
@@ -249,64 +60,6 @@ footer {
 			  <li class="active"><a href="#Windows"><i class="fa fa-windows" aria-hidden="true"></i> Windows terminal command</a></li>
 			</ol>
         </div>
-
-        <!--  ------------------------ Links ------------------------ -->
-
-		<div class="col-md-12 nav" id="Links">
-            <div class="page-header">
-                <a target="_blank" href="template.html"><h4>Links</h4></a>
-            </div>
-            <a target="_blank" class="btn btn-mini2" href="https://resources.jetbrains.com/storage/products/intellij-idea/docs/IntelliJIDEA_ReferenceCard.pdf">IntelliJ IDEA KEYMAP</a>
-			<a target="_blank" class="btn btn-mini2" href="https://code.visualstudio.com/shortcuts/keyboard-shortcuts-macos.pdf">Keyboard shortcuts for macOS - Visual Studio Code</a>
-			<a target="_blank" class="btn btn-mini2" href="https://kapeli.com/cheat_sheets/iTerm2.docset/Contents/Resources/Documents/index">iTerm2 cheetsheet</a>
-		</div>
-		
-		<!--  ------------------------ Keymap & Shortcuts ------------------------ -->
-
-		<div class="col-md-12 nav" id="Keymap">
-			<div class="page-header">
-					<h4>Links</h4>
-			</div>
-			<a target="_blank" class="btn btn-mini" href="http://BootCDN.cn">BootCDN</a>
-			<a target="_blank" class="btn btn-mini" href="http://tool.lu">iBox在线工具</a>
-		</div>
-
-        <!--  ------------------------ FontAwesome Icons ------------------------ -->
-
-		<div class="col-md-12 nav" id="FontAwesome-Icons">
-			<div class="page-header">
-				<a target="_blank" href="https://fontawesome.com/v4.7.0/icons/">
-					<h4>Icons</h4>
-				</a>
-			</div>
-			<div class="table-responsive">
-				<table class="table table-bordered">
-					<tbody>
-						<tr>
-							<td><i class="fa fa-github-alt" aria-hidden="true"></i></td>
-							<td><textarea class="textarea code" readonly rows="1"><i class="fa fa-github-alt" aria-hidden="true"></i></textarea></td>
-						</tr>
-						<tr>
-							<td><i class="fa fa-weixin" aria-hidden="true"></i></td>
-							<td><textarea class="textarea code" readonly rows="1"><i class="fa fa-weixin" aria-hidden="true"></i></textarea></td>
-						</tr>
-						<tr>
-							<td><i class="fa fa-commenting-o" aria-hidden="true"></i></td>
-							<td><textarea class="textarea code" readonly rows="1"><i class="fa fa-commenting-o" aria-hidden="true"></i></textarea></td>
-						</tr>
-						<tr>
-							<td><i class="fa fa-envelope" aria-hidden="true"></i></td>
-							<td><textarea class="textarea code" readonly rows="1"><i class="fa fa-envelope" aria-hidden="true"></i></textarea></td>
-						</tr>
-						<tr>
-							<td><i class="fa fa-file-archive-o" aria-hidden="true"></i></td>
-							<td><textarea class="textarea code" readonly rows="1"><i class="fa fa-file-archive-o" aria-hidden="true"></i></textarea></td>
-						</tr>
-					</tbody>
-				</table>
-			</div>
-		</div>
-        
 
 		<!--  ------------------------ UNIX/Linux bash ------------------------ -->
 
