@@ -53,11 +53,10 @@ pre, .code{
 	<div class="row">
 		<div class="col-md-12 breadcrumb">
 			<ol class="breadcrumb">
-			  <li><a href="#Bash"><i class="fa fa-terminal" aria-hidden="true"></i> Bash</a></li>
-			  <li><a href="#Git"><i class="fa fa-github-alt" aria-hidden="true"></i> Git / GitHub</a></li>
-			  <li><a href="#Vi"><i class="fa fa-linux" aria-hidden="true"></i> Vi / Vim</a></li>
-			  <li><a href="#macosx"><i class="fa fa-apple" aria-hidden="true"></i> OS X</a></li>
-			  <li class="active"><a href="#Windows"><i class="fa fa-windows" aria-hidden="true"></i> Windows terminal command</a></li>
+			  <li><a href="#Bash">Bash</a></li>
+			  <li><a href="#Git">Git / GitHub</a></li>
+			  <li><a href="#Vi">Vi / Vim</a></li>
+			  <li><a href="#macosx">macOS</a></li>
 			</ol>
         </div>
 
@@ -548,84 +547,8 @@ If you are unsure which mode you are in, press <kbd>Esc</kbd>. If you were in in
 				</tr></tbody></table>
 			</div>
 		</div>
-
-		<!--  ------------------------ Windows terminal command ------------------------ -->
-
-		<div class="col-md-12 nav" id="Windows">
-			<div class="page-header"><h4>Windows DOS/terminal command</h4></div>
-
-			<h6>Provide you with a list of currently open ports and related IP addresses. You’ll also be told what state the port is in – listening, established or closed.</h6>
-			<pre class="prettyprint">
-  netstat -an</pre>
-			<h6>Provide a current list of all tasks running on your PC</h6>
-			<pre class="prettyprint">
-  Tasklist</pre>
-        </div>
-        
-        <div class="col-md-12 nav" id="showHtml">
-			<div class="page-header"><h4>HTML Template<li></h4></div>
-			<pre class="prettyprint" id="myHtml"><i class="fa fa-spinner fa-spin"></i></li></pre>
-		</div>
-
-
 	</div>
 </div>
-
-<div class="text-center"><a id="UserAgent">UserAgent</a></div>
-
-<div class="met-online">
-	<ul class="blocks list-unstyled">
-		<li class="go_to_top"><button type="button" class="btn btn-icon btn-info">
-			<i class="fa fa-chevron-up" aria-hidden="true"></i></button>
-		</li>
-	</ul>
-</div>
-<script src="https://cdn.bootcss.com/jquery/3.3.1/jquery.min.js"></script>
-<script src="https://cdn.bootcss.com/highlight.js/9.12.0/highlight.min.js"></script>
-<script src="http://cdn.bootcss.com/bootstrap/3.3.7/js/bootstrap.min.js"></script>
-<script>
-$(document).ready(function() {
-	$(".go_to_top").click(function() {
-        $("html,body").animate({
-            'scrollTop': '0px'
-        }, 300)
-    });
-    $(window).scroll(function() {
-        var top = $(document).scrollTop();
-        var g = $(".met-online");
-        if (top > 100 && g.is(":hidden")) {
-            g.fadeIn();
-        } else if(top < 100 && g.is(":visible")) {
-            g.fadeOut();
-        }
-	});
-
-	$("#UserAgent").html(navigator.userAgent);
-	
-    $(document).on('click', 'a[href^="#"]', function (event) {
-        event.preventDefault();
-
-        $('html, body').animate({
-            scrollTop: $($.attr(this, 'href')).offset().top
-        }, 500);
-    });
-
-    $('pre').each(function(i, block) {
-        hljs.highlightBlock(block);
-	});
-
-	$('#showHtml').on('click', function() {
-        $.ajax({
-			url: "template.html",
-			cache: false,
-			success: function(html){
-				$("#myHtml").html("<xmp>"+html+"</xmp>");
-			}
-		});
-    });
-	
-	
-});
 </script>
 </body>
 </html>
