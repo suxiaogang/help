@@ -1,0 +1,721 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Base64 转图片预览</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --panel: #1e293b;
+    --panel-2: #273449;
+    --border: #334155;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --accent: #38bdf8;
+    --accent-strong: #0ea5e9;
+    --danger: #f87171;
+    --ok: #4ade80;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    height: 100%;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+                 "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    display: flex;
+    flex-direction: column;
+  }
+
+  header {
+    padding: 16px 22px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  header h1 {
+    font-size: 17px;
+    margin: 0;
+    font-weight: 600;
+    letter-spacing: .3px;
+  }
+
+  header .hint {
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  /* ---------- 两列布局 ---------- */
+  .layout {
+    flex: 1;
+    display: grid;
+    grid-template-columns: minmax(320px, 1fr) minmax(320px, 1fr);
+    gap: 0;
+    min-height: 0;
+  }
+
+  .column {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    min-width: 0;
+  }
+
+  .column.left  { border-right: 1px solid var(--border); }
+
+  .col-head {
+    padding: 12px 18px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--muted);
+    letter-spacing: .5px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+
+  .col-head .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+  button {
+    font: inherit;
+    font-size: 12px;
+    padding: 6px 12px;
+    border-radius: 7px;
+    border: 1px solid var(--border);
+    background: var(--panel-2);
+    color: var(--text);
+    cursor: pointer;
+    transition: background .15s, border-color .15s, opacity .15s;
+  }
+  button:hover:not(:disabled) { background: #33445e; border-color: #4b5f7d; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.primary {
+    background: var(--accent-strong);
+    border-color: var(--accent-strong);
+    color: #04283b;
+    font-weight: 600;
+  }
+  button.primary:hover:not(:disabled) { background: #38bdf8; border-color: #38bdf8; }
+
+  .editor-wrap {
+    flex: 1;
+    display: flex;
+    min-height: 0;
+    padding: 14px;
+  }
+
+  textarea {
+    flex: 1;
+    resize: none;
+    width: 100%;
+    padding: 12px 14px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--text);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12.5px;
+    line-height: 1.6;
+    word-break: break-all;
+    outline: none;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  textarea:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(56, 189, 248, .15);
+  }
+  textarea.dragover { border-color: var(--accent); background: #23324a; }
+
+  .status {
+    padding: 8px 18px;
+    font-size: 12px;
+    min-height: 34px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border-top: 1px solid var(--border);
+    color: var(--muted);
+    word-break: break-all;
+  }
+  .status.error { color: var(--danger); }
+  .status.ok    { color: var(--ok); }
+  .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--muted); flex: none;
+  }
+  .status.error .dot { background: var(--danger); }
+  .status.ok .dot    { background: var(--ok); }
+
+  /* ---------- 图片预览 ---------- */
+  .preview {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 18px;
+    overflow: auto;
+    background-image:
+      linear-gradient(45deg, #16202f 25%, transparent 25%),
+      linear-gradient(-45deg, #16202f 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #16202f 75%),
+      linear-gradient(-45deg, transparent 75%, #16202f 75%);
+    background-size: 22px 22px;
+    background-position: 0 0, 0 11px, 11px -11px, -11px 0;
+  }
+
+  .preview img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    border-radius: 8px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, .45);
+    background: #fff;
+  }
+
+  .placeholder {
+    color: var(--muted);
+    font-size: 13px;
+    text-align: center;
+    line-height: 2;
+    user-select: none;
+    max-width: 320px;
+  }
+  .placeholder .big { font-size: 40px; display: block; margin-bottom: 6px; opacity: .5; }
+  .placeholder kbd {
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-size: 11px;
+    font-family: ui-monospace, monospace;
+  }
+
+  .meta {
+    padding: 8px 18px;
+    font-size: 12px;
+    color: var(--muted);
+    border-top: 1px solid var(--border);
+    min-height: 34px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+  }
+  .meta b { color: var(--text); font-weight: 600; }
+
+  /* ---------- 响应式：窄屏改为上下排列 ---------- */
+  @media (max-width: 760px) {
+    .layout { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
+    .column.left { border-right: none; border-bottom: 1px solid var(--border); }
+    header h1 { font-size: 15px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Base64 → 图片预览</h1>
+  <span class="hint">支持纯 Base64、Data URL、Markdown 图片语法、HTML img 标签；可粘贴或拖入图片文件</span>
+</header>
+
+<div class="layout">
+
+  <!-- 左列：输入 -->
+  <section class="column left">
+    <div class="col-head">
+      <span>Base64 输入</span>
+      <div class="actions">
+        <button id="pasteBtn" type="button">从剪贴板粘贴</button>
+        <button id="fileBtn" type="button">选择图片文件</button>
+        <button id="clearBtn" type="button">清空</button>
+      </div>
+    </div>
+
+    <div class="editor-wrap">
+      <textarea id="input" spellcheck="false" autocomplete="off"
+        placeholder="在此粘贴 Base64 或包含它的 Markdown / HTML……&#10;&#10;纯 Base64：&#10;iVBORw0KGgoAAAANSUhEUg…&#10;&#10;Data URL：&#10;data:image/png;base64,iVBORw0KGgoAAAANSUhEUg…&#10;&#10;Markdown：&#10;![generated image](data:image/png;base64,iVBORw0KGgo…)"></textarea>
+    </div>
+
+    <div class="status" id="status"><span class="dot"></span><span id="statusText">等待输入…</span></div>
+  </section>
+
+  <!-- 右列：预览 -->
+  <section class="column right">
+    <div class="col-head">
+      <span>图片预览</span>
+      <div class="actions">
+        <button id="downloadBtn" type="button" disabled>下载图片</button>
+        <button id="openBtn" type="button" disabled>新窗口打开</button>
+      </div>
+    </div>
+
+    <div class="preview" id="preview">
+      <div class="placeholder" id="placeholder">
+        <span class="big">🖼️</span>
+        左侧输入 Base64 后<br>这里会显示真实图片
+      </div>
+      <img id="img" alt="Base64 预览图" hidden>
+    </div>
+
+    <div class="meta" id="meta"></div>
+  </section>
+
+</div>
+
+<input type="file" id="fileInput" accept="image/*" hidden>
+
+<script>
+(function () {
+  "use strict";
+
+  var input        = document.getElementById("input");
+  var img          = document.getElementById("img");
+  var preview      = document.getElementById("preview");
+  var placeholder  = document.getElementById("placeholder");
+  var statusEl     = document.getElementById("status");
+  var statusText   = document.getElementById("statusText");
+  var metaEl       = document.getElementById("meta");
+  var downloadBtn  = document.getElementById("downloadBtn");
+  var openBtn      = document.getElementById("openBtn");
+  var clearBtn     = document.getElementById("clearBtn");
+  var pasteBtn     = document.getElementById("pasteBtn");
+  var fileBtn      = document.getElementById("fileBtn");
+  var fileInput    = document.getElementById("fileInput");
+
+  var currentSrc   = "";      // 当前生效的图片地址
+  var debounceId   = null;
+
+  // ---------- 状态提示 ----------
+  function setStatus(text, kind) {
+    statusText.textContent = text;
+    statusEl.className = "status" + (kind ? " " + kind : "");
+  }
+
+  function setMeta(parts) {
+    metaEl.innerHTML = parts || "";
+  }
+
+  // ---------- 1. 从各种包装格式里提取图片地址 ----------
+  // 支持：Markdown 图片/链接、Markdown 引用式定义、HTML <img>、裸的 data URL、纯 Base64
+  function extractImageSrc(raw) {
+    var text = String(raw || "").trim();
+    if (!text) return { value: "", source: "" };
+
+    // a) Markdown 图片：![alt](url) / ![alt](<url>) / ![alt](url "title")，可跨行
+    var m = text.match(/!\[[^\]]*\]\(\s*<?([\s\S]+?)>?\s*(?:["'][^"']*["']\s*)?\)/);
+    if (m) return { value: m[1].trim(), source: "Markdown 图片" };
+
+    // b) Markdown 链接：[alt](url)
+    m = text.match(/\[[^\]]*\]\(\s*<?([\s\S]+?)>?\s*(?:["'][^"']*["']\s*)?\)/);
+    if (m && /^(?:data:|image\/|[A-Za-z0-9+/]{16})/i.test(m[1].trim())) {
+      return { value: m[1].trim(), source: "Markdown 链接" };
+    }
+
+    // c) HTML <img src="...">
+    m = text.match(/<img\b[^>]*?\bsrc\s*=\s*["']\s*([^"']+?)\s*["']/i);
+    if (!m) m = text.match(/<img\b[^>]*?\bsrc\s*=\s*([^\s>"']+)/i);
+    if (m) return { value: m[1].trim(), source: "HTML img 标签" };
+
+    // d) Markdown 引用式定义：[id]: <url> —— 通常单独占一行
+    var lines = text.split(/\r?\n/);
+    for (var i = 0; i < lines.length; i++) {
+      m = lines[i].match(/^\s*\[[^\]]*\]\s*:\s*<?(\S+?)>?\s*$/);
+      if (m && /^(?:data:|image\/)/i.test(m[1])) {
+        return { value: m[1], source: "Markdown 引用定义" };
+      }
+    }
+
+    // e) 文本里夹着的裸 data URL（贪婪匹配到行尾，Markdown 的右括号留给下一步清理）
+    m = text.match(/data:image\/[a-zA-Z0-9.+-]+;base64\s*,?[^\s"'<>)]+/i);
+    if (m) return { value: m[0], source: "Data URL" };
+
+    // f) 整个输入就是一个地址 / 纯 Base64
+    return { value: text, source: "纯 Base64" };
+  }
+
+  // ---------- 2. 清理出干净的 Base64 载荷 ----------
+  function cleanPayload(rawValue, source) {
+    var s = String(rawValue == null ? "" : rawValue).trim();
+
+    // 去掉粘贴时可能混入的空白与换行
+    s = s.replace(/[\s\u200B-\u200D\uFEFF]+/g, "");
+
+    // URL 编码形式（从网页复制时常见：data:image/png;base64%2C...）
+    s = s.replace(/^(data:[a-zA-Z0-9.+-]+\/[a-zA-Z0-9.+-]+;base64)\s*%2C/i, "$1,");
+    // 用 %2C 冒充 BASE64 前缀分隔逗号的情况（base64%2Cxxxx）
+    s = s.replace(/^base64\s*%2C/i, "base64,");
+
+    // 剥掉可能残留的包裹符号与占位内容
+    s = s.replace(/^["'`<(\[]+/, "").replace(/["'`>)\]]+$/, "");
+    s = s.replace(/^(?:\.{3}|…)+$/, "");   // 示例里的 "..." 直接忽略
+    s = s.replace(/(?:\.{3}|…)+$/, "");    // 结尾的省略号是占位符，不是数据
+
+    return s;
+  }
+
+  // ---------- 3. 规范化输入 ----------
+  // 返回 {src, mime, bytes, sniffed, source}；空输入返回 null；失败抛出带说明的错误
+  function normalize(raw) {
+    if (!String(raw || "").trim()) return null;
+
+    var found = extractImageSrc(raw);
+    var s = cleanPayload(found.value, found.source);
+    var mime = null;
+
+    // 1) 完整的 Data URL
+    var dataUrlMatch = s.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.*)$/i);
+    if (dataUrlMatch) {
+      mime = dataUrlMatch[1].toLowerCase();
+      s = dataUrlMatch[2];
+    } else if (/^data:/i.test(s)) {
+      // 非 base64 的 data URL（如 svg 的 urlencode 形式）
+      throw new Error("只支持 base64 形式的 Data URL（当前是 urlencode 或其他编码）");
+    }
+
+    // 2) 前缀被截断成 image/png;base64, 的情况
+    var partial = s.match(/^image\/([a-zA-Z0-9.+-]+);base64,(.*)$/i);
+    if (partial) {
+      mime = "image/" + partial[1].toLowerCase();
+      s = partial[2];
+    }
+
+    // 3) 兼容 URL-safe Base64（- 和 _ 代替 + 和 /）
+    s = s.replace(/-/g, "+").replace(/_/g, "/");
+    s = s.replace(/[=.\u2026]+$/, "");   // 结尾多余的 = 与占位省略号一并去掉
+
+    // 4) 字符合法性检查
+    if (!s) {
+      throw new Error("没有找到 Base64 数据（内容可能是示例占位符）");
+    }
+    if (!/^[A-Za-z0-9+/]+$/.test(s)) {
+      var bad = s.replace(/[A-Za-z0-9+/]/g, "");
+      throw new Error("包含非法字符：" + bad.slice(0, 12) + (bad.length > 12 ? "…" : ""));
+    }
+
+    // 5) 缺失的 padding 自动补齐，而不是直接报错
+    var rem = s.length % 4;
+    if (rem === 1) {
+      throw new Error("Base64 长度不合法（" + s.length + " 个字符，无法补齐）");
+    }
+    if (rem > 0) {
+      s += new Array(4 - rem + 1).join("=");
+    }
+
+    // 6) 校验这是不是真的图片数据
+    var bytes = decodeToBytes(s);
+    var sniffed = sniffMime(bytes);
+    if (!sniffed && !looksLikeImage(bytes)) {
+      // 常见于把 "xxxxxxxx..." 这类占位符当数据贴进来
+      throw new Error("这不是有效的图片数据（无法识别图片文件头，可能只是占位符）");
+    }
+
+    // 7) 定 MIME：文件头魔数优先，声明只作兜底（声明与真实字节冲突时以字节为准）
+    if (sniffed) {
+      mime = sniffed;
+    } else if (!mime || !/^image\//.test(mime)) {
+      mime = "image/png";
+    }
+
+    return {
+      src: "data:" + mime + ";base64," + s,
+      mime: mime,
+      bytes: bytes,
+      sniffed: sniffed,
+      source: found.source,
+      payloadLength: s.length
+    };
+  }
+
+  // 魔数认不出时的兜底判断：是否像某个图片格式的开头（用于拦截占位符 / 损坏数据）
+  function looksLikeImage(b) {
+    if (!b || b.length < 8) return false;
+
+    // JPEG：以 FFD8FF 开头
+    if (b[0] === 0xFF && b[1] === 0xD8 && b[2] === 0xFF) return true;
+    // GIF：GIF87a / GIF89a
+    if (b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x38) return true;
+    // BMP：BM
+    if (b[0] === 0x42 && b[1] === 0x4D) return true;
+    // TIFF：II*\0 或 MM\0*
+    if (b[0] === 0x49 && b[1] === 0x49 && b[2] === 0x2A) return true;
+    if (b[0] === 0x4D && b[1] === 0x4D && b[2] === 0x00) return true;
+    // JPEG 2000 / HEIC 之类：以 00 00 00 0C/18/20 的 box 开头
+    if (b[0] === 0x00 && b[1] === 0x00 && b[2] === 0x00) return true;
+
+    // 都认不出时，数据量足够大就放行，让浏览器去判断；
+    // 太短的一律当成占位符/损坏数据拒绝。
+    return b.length >= 64;
+  }
+
+  // 把 data URL 还原成 Blob（下载/新窗口打开时用，避免超长 URL 被浏览器截断）
+  function dataUrlToBlob(dataUrl) {
+    var comma = dataUrl.indexOf(",");
+    var mime = dataUrl.slice(5, comma).split(";")[0];
+    var bin = atob(dataUrl.slice(comma + 1));
+    var arr = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+    return new Blob([arr], { type: mime });
+  }
+
+  function decodeToBytes(b64) {
+    try {
+      var bin = atob(b64);
+      var arr = new Uint8Array(bin.length);
+      for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+      return arr;
+    } catch (e) {
+      throw new Error("Base64 解码失败，内容可能已损坏");
+    }
+  }
+
+  // 通过文件头判断真实格式
+  function sniffMime(b) {
+    if (!b || b.length < 4) return null;
+    var h = "";
+    for (var i = 0; i < Math.min(b.length, 12); i++) {
+      h += b[i].toString(16).padStart(2, "0");
+    }
+    if (h.indexOf("89504e47") === 0) return "image/png";
+    if (h.indexOf("ffd8ff") === 0)    return "image/jpeg";
+    if (h.indexOf("47494638") === 0)  return "image/gif";
+    if (h.indexOf("52494646") === 0 && h.substr(16, 8) === "57454250") return "image/webp";
+    if (h.indexOf("424d") === 0)      return "image/bmp";
+    if (h.indexOf("000000") === 0 || h.indexOf("00000100") === 0) return "image/x-icon";
+    if (h.substr(8, 8) === "66747970") return "image/avif"; // ....ftyp
+    if (h.indexOf("3c737667") === 0 || h.indexOf("3c3f786d") === 0) return "image/svg+xml";
+    return null;
+  }
+
+  function formatBytes(n) {
+    if (n < 1024) return n + " B";
+    if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB";
+    return (n / 1024 / 1024).toFixed(2) + " MB";
+  }
+
+  // ---------- 渲染 ----------
+  function showError(msg) {
+    img.hidden = true;
+    placeholder.hidden = false;
+    placeholder.innerHTML = '<span class="big">⚠️</span>' + escapeHtml(msg);
+    currentSrc = "";
+    setStatus(msg, "error");
+    setMeta("");
+    downloadBtn.disabled = true;
+    openBtn.disabled = true;
+  }
+
+  function showImage(info) {
+    currentSrc = info.src;
+    img.src = info.src;
+    img.hidden = false;
+    placeholder.hidden = true;
+
+    setStatus("转换成功（来源：" + info.source + "）", "ok");
+
+    var ext = (info.mime.split("/")[1] || "png").replace("+xml", "").replace("x-", "");
+    setMeta(
+      "<span>来源 <b>" + escapeHtml(info.source) + "</b></span>" +
+      "<span>格式 <b>" + escapeHtml(info.mime) + "</b></span>" +
+      "<span>体积 <b>" + formatBytes(info.bytes.length) + "</b></span>" +
+      "<span>字符数 <b>" + info.payloadLength + "</b></span>" +
+      "<span id=\"naturalSize\"></span>"
+    );
+    // 同一张图可能已加载过、不会再触发 load，这里补一次尺寸
+    var sizeEl = document.getElementById("naturalSize");
+    if (sizeEl && img.complete && img.naturalWidth) {
+      naturalSizeText = "尺寸 <b>" + img.naturalWidth + " × " + img.naturalHeight + "</b>";
+      sizeEl.innerHTML = naturalSizeText;
+    }
+
+    downloadBtn.disabled = false;
+    openBtn.disabled = false;
+    downloadBtn.dataset.ext = ext === "jpeg" ? "jpg" : ext;
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  // ---------- 主流程 ----------
+  function convert() {
+    var raw = input.value;
+    if (!raw.trim()) {
+      img.hidden = true;
+      placeholder.hidden = false;
+      placeholder.innerHTML = '<span class="big">🖼️</span>左侧输入 Base64 后<br>这里会显示真实图片';
+      currentSrc = "";
+      setStatus("等待输入…");
+      setMeta("");
+      downloadBtn.disabled = true;
+      openBtn.disabled = true;
+      return;
+    }
+
+    setStatus("解析中…");
+
+    var info;
+    try {
+      info = normalize(raw);
+    } catch (e) {
+      showError(e.message);
+      return;
+    }
+    if (!info) return;
+
+    showImage(info);
+  }
+
+  function scheduleConvert() {
+    if (debounceId) clearTimeout(debounceId);
+    debounceId = setTimeout(convert, 220);
+  }
+
+  // 图片尺寸信息（等加载完再写；缓存一份，避免重绘 meta 时丢失）
+  var naturalSizeText = "";
+
+  img.addEventListener("load", function () {
+    if (!img.naturalWidth) return;
+    naturalSizeText = "尺寸 <b>" + img.naturalWidth + " × " + img.naturalHeight + "</b>";
+    var el = document.getElementById("naturalSize");
+    if (el) el.innerHTML = naturalSizeText;
+  });
+  img.addEventListener("error", function () {
+    showError("解码后的数据不是浏览器能识别的图片");
+  });
+
+  // ---------- 事件绑定 ----------
+  input.addEventListener("input", scheduleConvert);
+
+  clearBtn.addEventListener("click", function () {
+    input.value = "";
+    convert();
+    input.focus();
+  });
+
+  downloadBtn.addEventListener("click", function () {
+    if (!currentSrc) return;
+    var a = document.createElement("a");
+    a.href = currentSrc;
+    a.download = "image." + (downloadBtn.dataset.ext || "png");
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  });
+
+  openBtn.addEventListener("click", function () {
+    if (!currentSrc) return;
+    try {
+      var url = URL.createObjectURL(dataUrlToBlob(currentSrc));
+      window.open(url, "_blank");
+      setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
+    } catch (e) {
+      showError("无法打开图片：" + e.message);
+    }
+  });
+
+  // 剪贴板粘贴（按钮方式，兼容需要用户手势的浏览器）
+  pasteBtn.addEventListener("click", function () {
+    if (!navigator.clipboard || !navigator.clipboard.readText) {
+      setStatus("当前环境不支持读取剪贴板，请在输入框中直接 Ctrl/⌘+V", "error");
+      return;
+    }
+    navigator.clipboard.readText().then(function (text) {
+      if (!text) { setStatus("剪贴板是空的", "error"); return; }
+      input.value = text;
+      convert();
+    }).catch(function () {
+      setStatus("读取剪贴板被拒绝，请在输入框中直接 Ctrl/⌘+V", "error");
+    });
+  });
+
+  // 本地图片文件 → 转成 Base64 填入输入框（方便验证）
+  fileBtn.addEventListener("click", function () { fileInput.click(); });
+  fileInput.addEventListener("change", function () {
+    var f = fileInput.files && fileInput.files[0];
+    if (!f) return;
+    var reader = new FileReader();
+    reader.onload = function () {
+      input.value = reader.result;
+      convert();
+    };
+    reader.onerror = function () { showError("读取文件失败"); };
+    reader.readAsDataURL(f);
+    fileInput.value = "";
+  });
+
+  // 拖拽：既支持拖入图片文件，也支持拖入文本
+  ["dragenter", "dragover"].forEach(function (ev) {
+    preview.addEventListener(ev, function (e) { e.preventDefault(); });
+    input.addEventListener(ev, function (e) { e.preventDefault(); input.classList.add("dragover"); });
+  });
+  ["dragleave", "drop"].forEach(function (ev) {
+    input.addEventListener(ev, function () { input.classList.remove("dragover"); });
+  });
+
+  input.addEventListener("drop", function (e) {
+    e.preventDefault();
+    var dt = e.dataTransfer;
+    if (!dt) return;
+
+    var file = dt.files && dt.files[0];
+    if (file && /^image\//.test(file.type)) {
+      var reader = new FileReader();
+      reader.onload = function () { input.value = reader.result; convert(); };
+      reader.readAsDataURL(file);
+      return;
+    }
+
+    var text = dt.getData("text/plain");
+    if (text) {
+      input.value = text;
+      convert();
+    }
+  });
+
+  // 页面级拖拽：拖到右侧预览区也能接收
+  preview.addEventListener("drop", function (e) {
+    e.preventDefault();
+    var dt = e.dataTransfer;
+    if (!dt) return;
+    var file = dt.files && dt.files[0];
+    if (file && /^image\//.test(file.type)) {
+      var reader = new FileReader();
+      reader.onload = function () { input.value = reader.result; convert(); };
+      reader.readAsDataURL(file);
+      return;
+    }
+    var text = dt.getData("text/plain");
+    if (text) { input.value = text; convert(); }
+  });
+
+  // 快捷键：Ctrl/⌘ + Enter 立即转换
+  input.addEventListener("keydown", function (e) {
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+      e.preventDefault();
+      if (debounceId) clearTimeout(debounceId);
+      convert();
+    }
+  });
+
+  // 初始状态
+  convert();
+})();
+</script>
+</body>
+</html>
