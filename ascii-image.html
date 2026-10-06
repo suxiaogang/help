@@ -327,8 +327,8 @@
 
       <div>
         <label for="contrast">Contrast / 对比度</label>
-        <input type="range" id="contrast" value="100" min="0" max="200" />
-        <div class="range-value" id="contrastValue">100</div>
+        <input type="range" id="contrast" value="0" min="0" max="200" />
+        <div class="range-value" id="contrastValue">0</div>
       </div>
       <div>
         <label for="brightness">Brightness / 亮度</label>
@@ -584,7 +584,7 @@
 
       const theme = COLOR_THEMES[els.colorTheme.value];
       const fontSize = 12;
-      const lineHeight = fontSize * 1.15;
+      const lineHeight = fontSize;
       const lines = lastOutput.split("\n");
       const maxWidth = Math.max(...lines.map(line => line.length)) * fontSize * 0.6;
       const canvasWidth = maxWidth + 40;
@@ -599,7 +599,7 @@
       ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
       ctx.fillStyle = theme.fg;
-      ctx.font = `${fontSize}px ${getComputedStyle(document.body).fontFamily.replace(/"/g, "'")}`;
+      ctx.font = `${fontSize}px ${'SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, Courier New, monospace'}`;
       ctx.textBaseline = "top";
 
       lines.forEach((line, index) => {
