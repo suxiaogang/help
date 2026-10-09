@@ -1,0 +1,1245 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>图片滤镜</title>
+  <style>
+    :root {
+      --bg: #0e1116;
+      --panel: #171c24;
+      --panel-2: #1e2632;
+      --border: #2a3340;
+      --text: #e8edf4;
+      --muted: #8b97a8;
+      --accent: #3dd68c;
+      --accent-2: #2bb673;
+      --danger: #ff6b6b;
+      --radius: 10px;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+              "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body { margin: 0; height: 100%; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      font-size: 13px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ---------- 页头 ---------- */
+    header {
+      flex: 0 0 auto;
+      padding: 12px 22px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    header h1 { font-size: 16px; margin: 0; font-weight: 600; letter-spacing: .3px; }
+    header .hint { font-size: 12px; color: var(--muted); }
+
+    /* ---------- 两列：左窄右宽 ---------- */
+    .layout {
+      flex: 1 1 auto;
+      display: grid;
+      grid-template-columns: 340px minmax(0, 1fr);
+      min-height: 0;
+    }
+
+    .column {
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      min-width: 0;
+    }
+    .column.left { border-right: 1px solid var(--border); }
+
+    .col-head {
+      flex: 0 0 auto;
+      padding: 10px 16px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      letter-spacing: .5px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      border-bottom: 1px solid var(--border);
+    }
+    .col-head .actions { display: flex; gap: 8px; align-items: center; }
+
+    /* ---------- 按钮 ---------- */
+    button {
+      font: inherit;
+      font-size: 12px;
+      padding: 6px 12px;
+      border-radius: 7px;
+      border: 1px solid var(--border);
+      background: var(--panel-2);
+      color: var(--text);
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background .15s, border-color .15s, opacity .15s;
+    }
+    button:hover:not(:disabled) { background: #232c39; border-color: #3a4557; }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+    button.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #062315;
+      font-weight: 600;
+    }
+    button.primary:hover:not(:disabled) { background: var(--accent-2); border-color: var(--accent-2); }
+    button.on { background: var(--accent); border-color: var(--accent); color: #062315; font-weight: 600; }
+    .hidden { display: none !important; }
+
+    select, input[type="number"] {
+      font: inherit;
+      font-size: 12px;
+      padding: 6px 8px;
+      border-radius: 7px;
+      border: 1px solid var(--border);
+      background: var(--panel-2);
+      color: var(--text);
+    }
+
+    /* ---------- 左列：上传 ---------- */
+    .drop {
+      flex: 0 0 auto;
+      margin: 12px 14px;
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 14px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color .2s, background-color .2s;
+    }
+    .drop:hover, .drop.dragover { border-color: var(--accent); background: rgba(61, 214, 140, .06); }
+    .drop .inner { display: flex; align-items: center; gap: 10px; text-align: left; }
+    .drop .icon { font-size: 22px; line-height: 1; flex: 0 0 auto; }
+    .drop .text { color: var(--muted); font-size: 11.5px; line-height: 1.45; }
+    .drop .text b { color: var(--text); }
+    .drop input[type="file"] { display: none; }
+
+    /* ---------- 左列：面板 ---------- */
+    .panel {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow-y: auto;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    .group { display: flex; flex-direction: column; gap: 9px; }
+    .group-title {
+      font-size: 11px;
+      color: var(--muted);
+      font-weight: 600;
+      letter-spacing: .4px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    /* 滤镜按钮网格 */
+    .filter-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 7px;
+    }
+    .fbtn {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 7px 9px;
+      text-align: left;
+    }
+    /* 图标显式给色，不依赖继承 —— 否则会吃到 button.on 的深绿色 */
+    .fbtn .ic {
+      width: 16px; text-align: center; font-size: 13px;
+      flex: 0 0 auto;
+      color: var(--muted);
+      line-height: 1;
+    }
+    .fbtn .tx { display: flex; flex-direction: column; line-height: 1.25; min-width: 0; }
+    .fbtn .nm { font-size: 12px; font-weight: 600; }
+    .fbtn .ds { font-size: 10px; color: var(--muted); font-weight: 400; }
+    .fbtn .val {
+      margin-left: auto;
+      font-family: var(--mono);
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--accent);
+      flex: 0 0 auto;
+    }
+
+    /* 已应用：名称变绿，并在右侧显示当前强度数值。
+       所有「已应用」的按钮外观必须完全一致 —— 之前额外用竖条标记
+       「滑块正调节的那一个」，导致同为已应用的两个滤镜长得不一样，
+       看起来像状态有别。选中态改由下方强度面板的标题文字承担。
+
+       类名用 applied 而非 on：全局 button.on 会把文字设成深绿 #062315
+       （那是给实心绿底的按钮用的），若与本组件撞名，
+       在半透明绿底上就会变成深字压暗底，几乎看不清。 */
+    .fbtn.applied { border-color: rgba(61, 214, 140, .5); background: rgba(61, 214, 140, .08); }
+    .fbtn.applied .nm { color: var(--accent); }
+    .fbtn.applied .ic { color: var(--accent); opacity: 1; }
+
+    /* 强度滑块。按钮不再标记选中态，改由这里的标题明确指出
+       当前调节的是哪一个滤镜（「正在调节 · 灰度」）。 */
+    .slider-row { display: flex; flex-direction: column; gap: 7px; }
+    .slider-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      font-size: 11px;
+      color: var(--muted);
+      gap: 8px;
+    }
+    .slider-head b {
+      color: var(--text);
+      font-size: 12px;
+      display: inline-flex;
+      align-items: baseline;
+      gap: 6px;
+      min-width: 0;
+    }
+    /* 仅在确实选中了某个滤镜时才提示「正在调节」，
+       否则会出现「正在调节 · 未选择滤镜」这种自相矛盾的文案 */
+    .slider-head b.active::before {
+      content: "正在调节";
+      font-size: 10px;
+      font-weight: 400;
+      color: var(--muted);
+    }
+    .slider-head .v { font-family: var(--mono); color: var(--accent); font-weight: 600; }
+    .slider-head .v.off { color: var(--muted); }
+    .slider-btns { display: flex; gap: 6px; }
+    .slider-btns button { flex: 1; }
+
+    input[type="range"] {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 4px;
+      border-radius: 3px;
+      background: var(--border);
+      outline: none;
+      cursor: pointer;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 15px; height: 15px;
+      border-radius: 50%;
+      background: var(--accent);
+      border: 2px solid var(--bg);
+      cursor: grab;
+    }
+    input[type="range"]::-moz-range-thumb {
+      width: 13px; height: 13px;
+      border-radius: 50%;
+      background: var(--accent);
+      border: 2px solid var(--bg);
+      cursor: grab;
+    }
+    input[type="range"]:disabled { opacity: .4; cursor: not-allowed; }
+
+    /* 已启用滤镜 */
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 6px 3px 9px;
+      font-size: 11px;
+      border-radius: 20px;
+      border: 1px solid var(--border);
+      background: var(--panel-2);
+      color: var(--text);
+      cursor: pointer;
+    }
+    .chip b { font-family: var(--mono); color: var(--accent); font-weight: 600; }
+    .chip .x {
+      width: 15px; height: 15px;
+      display: inline-flex; align-items: center; justify-content: center;
+      border-radius: 50%;
+      background: #2a3340;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1;
+    }
+    .chip:hover .x { background: var(--danger); color: #fff; }
+    .empty-hint { font-size: 11px; color: var(--muted); }
+
+    .tip {
+      font-size: 11px;
+      color: var(--muted);
+      line-height: 1.55;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 8px 10px;
+    }
+    .tip b { color: var(--text); font-weight: 600; }
+
+    /* ---------- 右列：预览 ---------- */
+    .preview {
+      flex: 1 1 auto;
+      min-height: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      overflow: hidden;
+      background: #0a0d12;
+    }
+
+    .cmp {
+      position: relative;
+      flex: 0 0 auto;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, .5);
+      background-image:
+        linear-gradient(45deg, #2a3140 25%, transparent 25%),
+        linear-gradient(-45deg, #2a3140 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #2a3140 75%),
+        linear-gradient(-45deg, transparent 75%, #2a3140 75%);
+      background-size: 16px 16px;
+      background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+      user-select: none;
+      touch-action: none;
+    }
+    .cmp canvas {
+      display: block;
+      width: 100%; height: 100%;
+    }
+    .cmp canvas.out {
+      position: absolute;
+      inset: 0;
+      clip-path: inset(0 0 0 0);
+    }
+    .cmp canvas.base { position: relative; }
+
+    .divider {
+      position: absolute;
+      top: 0; bottom: 0;
+      left: 0;
+      width: 2px;
+      background: #fff;
+      box-shadow: 0 0 6px rgba(0, 0, 0, .6);
+      cursor: ew-resize;
+      z-index: 2;
+    }
+    .divider .grip {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      width: 26px; height: 26px;
+      border-radius: 50%;
+      background: #fff;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, .55);
+      display: flex; align-items: center; justify-content: center;
+      color: #333;
+      font-size: 13px;
+      line-height: 1;
+    }
+    .divider.hidden { display: none; }
+
+    /* 「原图 / 效果」只在对比模式下出现 */
+    .cmp-labels {
+      position: absolute;
+      top: 8px;
+      font-size: 10.5px;
+      font-weight: 600;
+      letter-spacing: .5px;
+      padding: 2px 7px;
+      border-radius: 5px;
+      background: rgba(0, 0, 0, .55);
+      color: #fff;
+      pointer-events: none;
+      z-index: 3;
+      opacity: 0;
+      transition: opacity .2s;
+    }
+    .cmp.compare .cmp-labels { opacity: 1; }
+    .cmp-labels.l { left: 8px; }
+    .cmp-labels.r { right: 8px; }
+
+    .placeholder {
+      color: var(--muted);
+      font-size: 12.5px;
+      text-align: center;
+      line-height: 2;
+      user-select: none;
+    }
+    .placeholder .big { font-size: 34px; display: block; margin-bottom: 4px; opacity: .5; }
+
+    /* ---------- 底部信息 / 状态 ---------- */
+    .meta-bar {
+      flex: 0 0 auto;
+      padding: 8px 18px;
+      border-top: 1px solid var(--border);
+      font-size: 12px;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+      min-height: 38px;
+    }
+    .meta-bar b { color: var(--text); font-weight: 600; font-family: var(--mono); }
+
+    .status {
+      flex: 0 0 auto;
+      padding: 8px 18px;
+      font-size: 12px;
+      border-top: 1px solid var(--border);
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 36px;
+    }
+    .status.error { color: var(--danger); }
+    .status.ok { color: var(--accent); }
+    .dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--muted); flex: none;
+    }
+    .status.error .dot { background: var(--danger); }
+    .status.ok .dot { background: var(--accent); }
+
+    /* ---------- 响应式 ---------- */
+    @media (max-width: 820px) {
+      .layout {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto minmax(300px, 55vh);
+      }
+      .column.left { border-right: none; border-bottom: 1px solid var(--border); }
+      .column.left { flex: 0 0 auto; }
+      .panel {
+        flex: 0 0 auto;
+        overflow: visible;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: 16px;
+        align-items: start;
+      }
+      .preview { min-height: 260px; padding: 14px; }
+      header h1 { font-size: 15px; }
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>图片滤镜</h1>
+    <span class="hint">灰度、棕色、模糊、浮雕、锐化、噪点、像素化 · 全部在本地浏览器完成，图片不上传</span>
+  </header>
+
+  <div class="layout">
+
+    <!-- ================= 左列：设置 ================= -->
+    <section class="column left">
+
+      <div class="drop" id="drop">
+        <div class="inner">
+          <div class="icon">🖼️</div>
+          <div class="text"><b>点击选择图片</b>，或拖拽到这里<br />也可 Ctrl/⌘ + V 粘贴</div>
+        </div>
+        <input type="file" id="fileInput" accept="image/png,image/jpeg,image/webp,image/*" />
+      </div>
+
+      <div class="panel">
+
+        <!-- 滤镜选择 -->
+        <div class="group">
+          <div class="group-title">
+            <span>滤镜</span>
+            <button type="button" id="clearBtn" disabled title="关闭所有滤镜">全部关闭</button>
+          </div>
+          <div class="filter-grid" id="filterGrid"></div>
+        </div>
+
+        <!-- 强度调节 -->
+        <div class="group">
+          <div class="group-title"><span>强度</span></div>
+          <div class="slider-row" id="sliderRow">
+            <div class="slider-head">
+              <b id="curName">未选择滤镜</b>
+              <span class="v" id="curVal">—</span>
+            </div>
+            <input type="range" id="range" min="0" max="100" step="1" value="50" disabled />
+            <div class="slider-btns">
+              <button type="button" id="toggleBtn" disabled>启用</button>
+              <button type="button" id="zeroBtn" disabled>归零</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 已启用 -->
+        <div class="group">
+          <div class="group-title"><span>已启用</span></div>
+          <div class="chips" id="chips"></div>
+        </div>
+
+      </div>
+
+      <div class="col-head">
+        <span>导出</span>
+        <div class="actions">
+          <button type="button" id="compareBtn" disabled
+                  title="在预览上拖动分割线，左边显示原图、右边显示效果">对比原图</button>
+          <select id="format" title="下载格式">
+            <option value="png">PNG</option>
+            <option value="jpeg">JPG</option>
+            <option value="webp">WebP</option>
+          </select>
+          <button type="button" class="primary" id="downloadBtn" disabled>下载</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= 右列：预览 ================= -->
+    <section class="column right">
+      <div class="preview" id="preview">
+        <div class="placeholder" id="placeholder">
+          <span class="big">🖼️</span>
+          选择图片后<br>这里显示滤镜预览
+        </div>
+      </div>
+      <div class="meta-bar" id="metaBar"><span>等待选择图片</span></div>
+    </section>
+
+  </div>
+
+  <div class="status" id="status">
+    <span class="dot"></span>
+    <span id="statusText">选择一张图片开始</span>
+  </div>
+
+  <script>
+  (function () {
+    "use strict";
+
+    /* ============================================================
+       滤镜定义
+       ============================================================ */
+    var FILTERS = [
+      { key: "grayscale", name: "灰度",   icon: "◐", desc: "去色" },
+      { key: "sepia",     name: "棕色",   icon: "◑", desc: "复古" },
+      { key: "blur",      name: "模糊",   icon: "○", desc: "柔焦" },
+      { key: "sharpen",   name: "锐化",   icon: "△", desc: "锐利" },
+      { key: "emboss",    name: "浮雕",   icon: "▣", desc: "立体" },
+      { key: "noise",     name: "噪点",   icon: "⁘", desc: "颗粒" },
+      { key: "pixelate",  name: "像素化", icon: "▦", desc: "马赛克" }
+    ];
+
+    var BY_KEY = {};
+    FILTERS.forEach(function (f) { BY_KEY[f.key] = f; });
+
+    var MAX_EDGE = 8000;        // 导出时的单边上限
+    var PREVIEW_MAX = 1400;     // 预览画布长边上限，保证拖动流畅
+    var DEFAULT_STRENGTH = 50;  // 首次启用时的默认强度
+
+    /* ctx.filter 支持性检测（Safari 旧版本不支持） */
+    var SUPPORTS_FILTER = (function () {
+      try {
+        var c = document.createElement("canvas").getContext("2d");
+        c.filter = "blur(1px)";
+        return c.filter === "blur(1px)";
+      } catch (e) { return false; }
+    })();
+
+    /* ============================================================
+       状态
+       ============================================================ */
+    var sourceImage = null;   // 原始图（Image 或 Canvas），永不修改
+    var sourceUrl = null;
+    var cmpEl = null;         // 对比容器
+    var baseCv = null;        // 原图
+    var outCv = null;         // 滤镜后
+    var selected = null;      // 当前选中的滤镜 key
+    var compareOn = false;
+    var split = 50;           // 对比分割位置 0..100
+    var state = {};           // key -> 0..100
+    FILTERS.forEach(function (f) { state[f.key] = 0; });
+
+    var rafPending = false;
+
+    /* ============================================================
+       DOM
+       ============================================================ */
+    var drop        = document.getElementById("drop");
+    var fileInput   = document.getElementById("fileInput");
+    var filterGrid  = document.getElementById("filterGrid");
+    var rangeIn     = document.getElementById("range");
+    var curName     = document.getElementById("curName");
+    var curVal      = document.getElementById("curVal");
+    var toggleBtn   = document.getElementById("toggleBtn");
+    var zeroBtn     = document.getElementById("zeroBtn");
+    var chips       = document.getElementById("chips");
+    var clearBtn    = document.getElementById("clearBtn");
+    var compareBtn  = document.getElementById("compareBtn");
+    var formatSel   = document.getElementById("format");
+    var downloadBtn = document.getElementById("downloadBtn");
+    var preview     = document.getElementById("preview");
+    var placeholder = document.getElementById("placeholder");
+    var metaBar     = document.getElementById("metaBar");
+    var statusEl    = document.getElementById("status");
+    var statusText  = document.getElementById("statusText");
+
+    /* ============================================================
+       工具
+       ============================================================ */
+    function setStatus(text, kind) {
+      statusText.textContent = text;
+      statusEl.className = "status" + (kind ? " " + kind : "");
+    }
+
+    function clampInt(v, lo, hi) {
+      v = Math.round(Number(v) || 0);
+      return Math.max(lo, Math.min(hi, v));
+    }
+
+    function activeKeys() {
+      return FILTERS.filter(function (f) { return state[f.key] > 0; })
+                    .map(function (f) { return f.key; });
+    }
+
+    function hasAnyFilter() { return activeKeys().length > 0; }
+
+    /* ============================================================
+       滤镜核心
+       ============================================================ */
+
+    /* 3×3 卷积，amount 为混合强度 0..1 */
+    function convolve(data, w, h, kernel, amount) {
+      var side = 3, half = 1;
+      var src = new Uint8ClampedArray(data);
+      var i, x, y, ky, kx, ch, sum, idx, k;
+
+      for (y = 0; y < h; y++) {
+        for (x = 0; x < w; x++) {
+          idx = (y * w + x) * 4;
+          for (ch = 0; ch < 3; ch++) {
+            sum = 0;
+            for (ky = 0; ky < side; ky++) {
+              var sy = y + ky - half;
+              if (sy < 0) sy = 0; else if (sy >= h) sy = h - 1;
+              for (kx = 0; kx < side; kx++) {
+                var sx = x + kx - half;
+                if (sx < 0) sx = 0; else if (sx >= w) sx = w - 1;
+                k = kernel[ky * side + kx];
+                sum += src[(sy * w + sx) * 4 + ch] * k;
+              }
+            }
+            i = idx + ch;
+            data[i] = src[i] + (sum - src[i]) * amount;
+          }
+        }
+      }
+    }
+
+    var K_SHARPEN = [0, -1, 0, -1, 5, -1, 0, -1, 0];
+    var K_EMBOSS  = [-2, -1, 0, -1, 1, 1, 0, 1, 2];
+
+    /* ctx.filter 不可用时的降级：三次盒式模糊近似高斯 */
+    function boxBlur(data, w, h, radius) {
+      var r = Math.max(1, Math.round(radius));
+      var tmp = new Uint8ClampedArray(data.length);
+      var i, x, y, c;
+
+      function pass(src, dst, horizontal) {
+        for (y = 0; y < h; y++) {
+          for (x = 0; x < w; x++) {
+            for (c = 0; c < 3; c++) {
+              var sum = 0, n = 0;
+              for (var k = -r; k <= r; k++) {
+                var sx = x + k, sy = y;
+                if (horizontal) { sy = y; sx = x + k; } else { sx = x; sy = y + k; }
+                if (sx < 0) sx = 0; else if (sx >= w) sx = w - 1;
+                if (sy < 0) sy = 0; else if (sy >= h) sy = h - 1;
+                sum += src[(sy * w + sx) * 4 + c];
+                n++;
+              }
+              dst[(y * w + x) * 4 + c] = sum / n;
+            }
+          }
+        }
+      }
+
+      for (i = 0; i < 3; i++) {
+        pass(data, tmp, true);
+        pass(tmp, data, false);
+      }
+    }
+
+    /* 把 img 按 w×h 绘制到新画布并依次施加所有启用的滤镜。
+       scale 用于让模糊/像素化等空间类滤镜在缩略预览下保持观感一致。 */
+    function applyFilters(img, w, h, scale) {
+      var f = state;
+      var c = document.createElement("canvas");
+      c.width = w;
+      c.height = h;
+      var ctx = c.getContext("2d", { willReadFrequently: true });
+      ctx.imageSmoothingQuality = "high";
+
+      /* 1) 色调类：交给浏览器原生 filter，速度快 */
+      var parts = [];
+      if (f.grayscale > 0) parts.push("grayscale(" + f.grayscale + "%)");
+      if (f.sepia > 0)     parts.push("sepia(" + f.sepia + "%)");
+      if (SUPPORTS_FILTER && parts.length) ctx.filter = parts.join(" ");
+      ctx.drawImage(img, 0, 0, w, h);
+      ctx.filter = "none";
+
+      /* 2) 像素化：先缩小再放大，关闭插值得到马赛克 */
+      if (f.pixelate > 0) {
+        var block = Math.max(1, (1 + f.pixelate / 100 * 39) * scale);
+        var sw = Math.max(1, Math.round(w / block));
+        var sh = Math.max(1, Math.round(h / block));
+        var tmp = document.createElement("canvas");
+        tmp.width = sw;
+        tmp.height = sh;
+        var tctx = tmp.getContext("2d");
+        tctx.imageSmoothingEnabled = true;
+        tctx.imageSmoothingQuality = "high";
+        tctx.drawImage(c, 0, 0, sw, sh);
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(tmp, 0, 0, w, h);
+        ctx.imageSmoothingEnabled = true;
+      }
+
+      /* 3) 模糊：缩放预览时半径同步缩小，观感与原图导出一致 */
+      if (f.blur > 0) {
+        var radius = (f.blur / 100 * 20) * scale;
+        if (SUPPORTS_FILTER) {
+          ctx.save();
+          ctx.filter = "blur(" + radius + "px)";
+          ctx.drawImage(c, 0, 0);
+          ctx.restore();
+          ctx.filter = "none";
+        } else {
+          var id = ctx.getImageData(0, 0, w, h);
+          boxBlur(id.data, w, h, radius);
+          ctx.putImageData(id, 0, 0);
+        }
+      }
+
+      /* 4) 需要逐像素运算的滤镜 */
+      if (f.sharpen > 0 || f.emboss > 0 || f.noise > 0) {
+        var imgData = ctx.getImageData(0, 0, w, h);
+        var d = imgData.data;
+
+        if (f.sharpen > 0) convolve(d, w, h, K_SHARPEN, f.sharpen / 100);
+        if (f.emboss > 0)  convolve(d, w, h, K_EMBOSS, f.emboss / 100);
+        if (f.noise > 0) {
+          var amp = (f.noise / 100) * 128;
+          for (var i = 0; i < d.length; i += 4) {
+            var n = (Math.random() * 2 - 1) * amp;
+            d[i] += n; d[i + 1] += n; d[i + 2] += n;
+          }
+        }
+        ctx.putImageData(imgData, 0, 0);
+      }
+
+      return c;
+    }
+
+    /* ============================================================
+       预览
+       ============================================================ */
+    function ensureCmp() {
+      if (cmpEl) return;
+      preview.innerHTML = "";
+      cmpEl = document.createElement("div");
+      cmpEl.className = "cmp";
+
+      baseCv = document.createElement("canvas");
+      baseCv.className = "base";
+      outCv = document.createElement("canvas");
+      outCv.className = "out";
+
+      var labL = document.createElement("div");
+      labL.className = "cmp-labels l";
+      labL.textContent = "原图";
+      var labR = document.createElement("div");
+      labR.className = "cmp-labels r";
+      labR.textContent = "效果";
+
+      var divider = document.createElement("div");
+      divider.className = "divider hidden";
+      divider.id = "divider";
+      var grip = document.createElement("div");
+      grip.className = "grip";
+      grip.textContent = "⇔";
+      divider.appendChild(grip);
+
+      cmpEl.appendChild(baseCv);
+      cmpEl.appendChild(outCv);
+      cmpEl.appendChild(labL);
+      cmpEl.appendChild(labR);
+      cmpEl.appendChild(divider);
+      preview.appendChild(cmpEl);
+      attachCompare(cmpEl, divider);
+    }
+
+    function renderPreview() {
+      if (!sourceImage) return;
+
+      var pad = 40;
+      var availW = Math.max(1, preview.clientWidth - pad);
+      var availH = Math.max(1, preview.clientHeight - pad);
+
+      var scale = Math.min(
+        availW / sourceImage.width,
+        availH / sourceImage.height,
+        PREVIEW_MAX / Math.max(sourceImage.width, sourceImage.height),
+        1
+      );
+      if (!isFinite(scale) || scale <= 0) scale = 0.1;
+
+      var w = Math.max(1, Math.round(sourceImage.width * scale));
+      var h = Math.max(1, Math.round(sourceImage.height * scale));
+
+      ensureCmp();
+      cmpEl.style.width = w + "px";
+      cmpEl.style.height = h + "px";
+      baseCv.width = w;
+      baseCv.height = h;
+      outCv.width = w;
+      outCv.height = h;
+
+      var bctx = baseCv.getContext("2d");
+      bctx.imageSmoothingQuality = "high";
+      bctx.clearRect(0, 0, w, h);
+      bctx.drawImage(sourceImage, 0, 0, w, h);
+
+      var result = applyFilters(sourceImage, w, h, scale);
+      var octx = outCv.getContext("2d");
+      octx.clearRect(0, 0, w, h);
+      octx.drawImage(result, 0, 0);
+
+      applySplit();
+      updateMeta(scale);
+    }
+
+    /* 拖动中间的分隔线对比原图与效果 */
+    function applySplit() {
+      var divider = document.getElementById("divider");
+      if (!divider) return;
+      if (!compareOn) {
+        outCv.style.clipPath = "inset(0 0 0 0)";
+        divider.classList.add("hidden");
+        cmpEl.classList.remove("compare");
+      } else {
+        outCv.style.clipPath = "inset(0 0 0 " + split + "%)";
+        divider.classList.remove("hidden");
+        cmpEl.classList.add("compare");
+        divider.style.left = split + "%";
+      }
+    }
+
+    function attachCompare(container, divider) {
+      var dragging = false;
+
+      function moveTo(clientX) {
+        var b = container.getBoundingClientRect();
+        if (b.width <= 0) return;
+        split = Math.max(0, Math.min(100, ((clientX - b.left) / b.width) * 100));
+        applySplit();
+      }
+
+      function down(e) {
+        if (!compareOn) return;
+        dragging = true;
+        try { container.setPointerCapture(e.pointerId); } catch (err) {}
+        moveTo(e.clientX);
+        e.preventDefault();
+      }
+
+      container.addEventListener("pointerdown", down);
+      container.addEventListener("pointermove", function (e) {
+        if (!dragging) return;
+        moveTo(e.clientX);
+        e.preventDefault();
+      });
+      ["pointerup", "pointercancel"].forEach(function (ev) {
+        container.addEventListener(ev, function (e) {
+          if (!dragging) return;
+          dragging = false;
+          try { container.releasePointerCapture(e.pointerId); } catch (err) {}
+        });
+      });
+    }
+
+    /* 拖动滑块时合并多次触发，只渲染一帧。
+       不能只依赖 requestAnimationFrame：页面在后台标签页或部分嵌入
+       容器里 rAF 会被节流甚至完全不触发，界面就会停在旧图不动。
+       因此同时挂一个 setTimeout 兜底，谁先到谁执行。 */
+    function scheduleRender() {
+      if (rafPending) return;
+      rafPending = true;
+
+      var done = false;
+      var run = function () {
+        if (done) return;
+        done = true;
+        rafPending = false;
+        renderPreview();
+      };
+
+      if (typeof requestAnimationFrame === "function") {
+        requestAnimationFrame(run);
+      }
+      setTimeout(run, 60);
+    }
+
+    function updateMeta(scale) {
+      var keys = activeKeys();
+      var bits = [];
+      if (sourceImage) {
+        bits.push("原图 <b>" + sourceImage.width + "×" + sourceImage.height + "</b>");
+        bits.push("缩放 <b>" + (scale * 100).toFixed(0) + "%</b>");
+      }
+      bits.push(keys.length
+        ? "滤镜 <b>" + keys.length + "</b> 项"
+        : "滤镜 <b>无</b>");
+      metaBar.innerHTML = bits.join('<span style="opacity:.4">·</span>');
+    }
+
+    /* ============================================================
+       左栏 UI
+       ============================================================ */
+    function buildFilterGrid() {
+      filterGrid.innerHTML = "";
+      FILTERS.forEach(function (f) {
+        var b = document.createElement("button");
+        b.type = "button";
+        b.className = "fbtn";
+        b.dataset.key = f.key;
+        b.innerHTML =
+          '<span class="ic">' + f.icon + "</span>" +
+          '<span class="tx"><span class="nm">' + f.name + "</span>" +
+          '<span class="ds">' + f.desc + "</span></span>" +
+          '<span class="val"></span>';
+        b.addEventListener("click", function () {
+          selectFilter(f.key);
+        });
+        filterGrid.appendChild(b);
+      });
+    }
+
+    function refreshGrid() {
+      [].forEach.call(filterGrid.children, function (b) {
+        var key = b.dataset.key;
+        var on = state[key] > 0;
+        b.classList.toggle("applied", on);
+        b.classList.toggle("sel", key === selected);
+        // 已应用的滤镜直接标出强度，选中但未应用的则留空
+        b.querySelector(".val").textContent = on ? state[key] : "";
+      });
+    }
+
+    function refreshChips() {
+      var keys = activeKeys();
+      chips.innerHTML = "";
+      if (!keys.length) {
+        var hint = document.createElement("span");
+        hint.className = "empty-hint";
+        hint.textContent = "尚未启用任何滤镜";
+        chips.appendChild(hint);
+        return;
+      }
+      keys.forEach(function (key) {
+        var f = BY_KEY[key];
+        var chip = document.createElement("span");
+        chip.className = "chip";
+        chip.title = "点击可调整强度，× 关闭该滤镜";
+        chip.innerHTML = f.name + " <b>" + Math.round(state[key]) + "</b>" +
+                         '<span class="x" data-x="' + key + '">×</span>';
+        chip.addEventListener("click", function (e) {
+          if (e.target.classList.contains("x")) return;
+          selectFilter(key);
+        });
+        var x = chip.querySelector(".x");
+        x.addEventListener("click", function (e) {
+          e.stopPropagation();
+          state[key] = 0;
+          if (selected === key) syncSlider();
+          refreshAll();
+          scheduleRender();   // 底部信息栏的滤镜计数在 renderPreview 里更新，缺了这步会残留旧数字
+        });
+        chips.appendChild(chip);
+      });
+    }
+
+    function syncSlider() {
+      var on = !!selected;
+      rangeIn.disabled = !on;
+      toggleBtn.disabled = !on;
+      zeroBtn.disabled = !on;
+
+      if (!on) {
+        curName.textContent = "未选择滤镜";
+        curName.classList.remove("active");
+        curVal.textContent = "—";
+        curVal.classList.add("off");
+        toggleBtn.textContent = "启用";
+        return;
+      }
+      var f = BY_KEY[selected];
+      var v = state[selected];
+      curName.textContent = f.name;
+      curName.classList.add("active");
+      curVal.textContent = v > 0 ? v + "%" : "关闭";
+      // 关闭状态用中性灰，避免残留的绿色被误读成「滤镜仍生效」
+      curVal.classList.toggle("off", v === 0);
+      rangeIn.value = v > 0 ? v : DEFAULT_STRENGTH;
+      toggleBtn.textContent = v > 0 ? "关闭" : "启用";
+    }
+
+    function refreshAll() {
+      refreshGrid();
+      refreshChips();
+      syncSlider();
+      syncStatus();
+    }
+
+    /* 状态栏随滤镜变化实时更新。
+       之前这句提示只在载入图片时设置一次，之后增删滤镜都不再刷新，
+       导致用户已经启用好几个滤镜，底部仍写着「选一个滤镜试试」。 */
+    function syncStatus() {
+      if (!sourceImage) return;
+
+      var keys = activeKeys();
+      if (!keys.length) {
+        setStatus("图片已就绪，选一个滤镜试试");
+        return;
+      }
+      var names = keys.map(function (k) {
+        return BY_KEY[k].name + " " + state[k] + "%";
+      });
+      setStatus("已启用 " + keys.length + " 个滤镜 · " + names.join("、"), "ok");
+    }
+
+    /* 选中某个滤镜：若之前是关闭状态，直接给一个默认强度，
+       这样点一下就能立刻看到效果，再拖滑块微调。 */
+    function selectFilter(key) {
+      if (state[key] === 0) state[key] = DEFAULT_STRENGTH;
+      selected = key;
+      refreshAll();
+      scheduleRender();
+    }
+
+    function clearAll() {
+      FILTERS.forEach(function (f) { state[f.key] = 0; });
+      refreshAll();
+      scheduleRender();
+    }
+
+    /* ============================================================
+       导出
+       ============================================================ */
+    function download() {
+      if (!sourceImage) return;
+
+      var fmt = formatSel.value;
+      var w = sourceImage.width;
+      var h = sourceImage.height;
+
+      // 大图超出画布上限时按比例缩小，并告知用户
+      var limit = MAX_EDGE;
+      var long = Math.max(w, h);
+      if (long > limit) {
+        var k = limit / long;
+        w = Math.max(1, Math.round(w * k));
+        h = Math.max(1, Math.round(h * k));
+        setStatus("原图超过 " + limit + "px，已缩放为 " + w + " × " + h + " px 后导出", "");
+      } else {
+        setStatus("正在生成…");
+      }
+
+      // 让状态文字先上屏，再做耗时运算
+      setTimeout(function () {
+        var out = applyFilters(sourceImage, w, h, 1);
+        var mime = "image/" + fmt;
+        out.toBlob(function (blob) {
+          if (!blob) { setStatus("导出失败", "error"); return; }
+          var url = URL.createObjectURL(blob);
+          var a = document.createElement("a");
+          a.href = url;
+          a.download = "filtered-" + w + "x" + h + "." + (fmt === "jpeg" ? "jpg" : fmt);
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
+          setStatus("已导出 " + a.download + "（" + formatBytes(blob.size) + "）", "ok");
+        }, mime, 0.92);
+      }, 30);
+    }
+
+    function formatBytes(n) {
+      if (n < 1024) return n + " B";
+      if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB";
+      return (n / 1024 / 1024).toFixed(2) + " MB";
+    }
+
+    /* ============================================================
+       载入
+       ============================================================ */
+    function loadImageFile(file) {
+      return new Promise(function (resolve, reject) {
+        var url = URL.createObjectURL(file);
+        var img = new Image();
+        img.onload = function () { resolve(img); };
+        img.onerror = function () {
+          URL.revokeObjectURL(url);
+          reject(new Error("图片解码失败，文件可能已损坏"));
+        };
+        img.src = url;
+      });
+    }
+
+    function resetOutput() {
+      sourceImage = null;
+      cmpEl = baseCv = outCv = null;
+      preview.innerHTML =
+        '<div class="placeholder" id="placeholder">' +
+        '<span class="big">🖼️</span>选择图片后<br>这里显示滤镜预览</div>';
+      metaBar.innerHTML = "<span>等待选择图片</span>";
+      downloadBtn.disabled = true;
+      clearBtn.disabled = true;
+      compareBtn.disabled = true;
+      compareOn = false;
+      compareBtn.classList.remove("on");
+      compareBtn.textContent = "对比原图";
+      FILTERS.forEach(function (f) { state[f.key] = 0; });
+      selected = null;
+      refreshGrid();
+      refreshChips();
+      syncSlider();
+    }
+
+    async function handleFile(file) {
+      setStatus("正在读取图片…");
+      try {
+        var img = await loadImageFile(file);
+        if (sourceUrl) URL.revokeObjectURL(sourceUrl);
+        sourceUrl = img.src;
+        sourceImage = img;
+
+        downloadBtn.disabled = false;
+        clearBtn.disabled = false;
+        compareBtn.disabled = false;
+
+        // 保持已选滤镜，切换图片后能直接看到效果
+        renderPreview();
+        syncStatus();
+      } catch (err) {
+        resetOutput();
+        setStatus(err && err.message ? err.message : "读取失败", "error");
+      }
+    }
+
+    /* ============================================================
+       事件
+       ============================================================ */
+    buildFilterGrid();
+    refreshChips();
+    syncSlider();
+
+    drop.addEventListener("click", function () { fileInput.click(); });
+    fileInput.addEventListener("change", function (e) {
+      if (e.target.files && e.target.files[0]) handleFile(e.target.files[0]);
+      fileInput.value = "";
+    });
+
+    ["dragenter", "dragover"].forEach(function (ev) {
+      drop.addEventListener(ev, function (e) {
+        e.preventDefault();
+        drop.classList.add("dragover");
+      });
+    });
+    ["dragleave", "drop"].forEach(function (ev) {
+      drop.addEventListener(ev, function () { drop.classList.remove("dragover"); });
+    });
+    drop.addEventListener("drop", function (e) {
+      e.preventDefault();
+      var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      if (f) handleFile(f);
+    });
+
+    document.addEventListener("paste", function (e) {
+      if (!e.clipboardData || !e.clipboardData.items) return;
+      for (var i = 0; i < e.clipboardData.items.length; i++) {
+        if (e.clipboardData.items[i].type.indexOf("image/") === 0) {
+          var f = e.clipboardData.items[i].getAsFile();
+          if (f) { handleFile(f); e.preventDefault(); }
+          break;
+        }
+      }
+    });
+
+    rangeIn.addEventListener("input", function () {
+      if (!selected) return;
+      state[selected] = clampInt(rangeIn.value, 0, 100);
+      syncSlider();
+      refreshGrid();
+      refreshChips();
+      syncStatus();     // 拖动滑块时状态栏也要跟着变
+      scheduleRender();
+    });
+
+    toggleBtn.addEventListener("click", function () {
+      if (!selected) return;
+      state[selected] = state[selected] > 0 ? 0 : clampInt(rangeIn.value, 1, 100);
+      refreshAll();
+      scheduleRender();
+    });
+
+    zeroBtn.addEventListener("click", function () {
+      if (!selected) return;
+      state[selected] = 0;
+      refreshAll();
+      scheduleRender();
+    });
+
+    clearBtn.addEventListener("click", clearAll);
+    downloadBtn.addEventListener("click", download);
+
+    compareBtn.addEventListener("click", function () {
+      if (!sourceImage) return;
+      compareOn = !compareOn;
+      if (compareOn && split <= 0) split = 50;   // 首次开启给一个居中位置
+      compareBtn.classList.toggle("on", compareOn);
+      compareBtn.textContent = compareOn ? "关闭对比" : "对比原图";
+      applySplit();
+    });
+
+    var resizeTimer = null;
+    window.addEventListener("resize", function () {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(function () {
+        if (sourceImage) renderPreview();
+      }, 150);
+    });
+
+  })();
+  </script>
+</body>
+</html>
