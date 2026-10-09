@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>User Agent 分析工具</title>
+  <style>
+    :root {
+      --bg: #0e1116;
+      --panel: #171c24;
+      --line: #2a3340;
+      --text: #e8edf4;
+      --muted: #8b97a8;
+      --accent: #3dd68c;
+      --accent-2: #2bb673;
+      --danger: #ff6b6b;
+      --radius: 14px;
+      --mono: "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      --sans: "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+    }
+
+    body { padding: 24px 18px 32px; }
+
+    .wrap {
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      margin: 0 0 6px;
+      font-size: 1.45rem;
+      letter-spacing: -0.03em;
+    }
+
+    .sub {
+      margin: 0 0 18px;
+      color: var(--muted);
+      font-size: 0.92rem;
+      line-height: 1.45;
+    }
+
+    /* ---------- 输入区 ---------- */
+    .input-section {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+
+    .input-section label {
+      display: block;
+      margin: 0 0 8px;
+      font-size: 0.85rem;
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 80px;
+      resize: vertical;
+      border: 1px solid var(--line);
+      background: #10151c;
+      color: var(--text);
+      border-radius: 10px;
+      padding: 10px 12px;
+      font: inherit;
+      font-family: var(--mono);
+      font-size: 0.85rem;
+      line-height: 1.5;
+      outline: none;
+      transition: border-color .15s, box-shadow .15s;
+    }
+    textarea:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(61, 214, 140, 0.15);
+    }
+
+    .btn-row {
+      display: flex;
+      gap: 10px;
+      margin-top: 12px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      border: 0;
+      border-radius: 10px;
+      padding: 9px 18px;
+      font-weight: 650;
+      font-size: 0.85rem;
+      cursor: pointer;
+      background: var(--accent);
+      color: #062315;
+      transition: background .15s;
+    }
+    button:hover { background: var(--accent-2); }
+
+    button.ghost {
+      background: #273140;
+      color: var(--text);
+    }
+    button.ghost:hover { background: #324155; }
+
+    /* ---------- 结果区 ---------- */
+    .result-section {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 16px;
+      display: none;
+    }
+    .result-section.show { display: block; }
+
+    .result-section h2 {
+      margin: 0 0 14px;
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .result-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 12px;
+    }
+
+    .result-item {
+      background: #10151c;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 12px 14px;
+    }
+
+    .result-item .label {
+      font-size: 0.72rem;
+      color: var(--muted);
+      margin-bottom: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .result-item .value {
+      font-size: 0.95rem;
+      color: var(--text);
+      font-weight: 600;
+      word-break: break-all;
+    }
+
+    .result-item .value.empty {
+      color: var(--muted);
+      font-weight: 400;
+    }
+
+    /* ---------- 原始 UA ---------- */
+    .raw-ua {
+      margin-top: 14px;
+      background: #10151c;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 12px 14px;
+    }
+
+    .raw-ua .label {
+      font-size: 0.72rem;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    .raw-ua .content {
+      font-family: var(--mono);
+      font-size: 0.8rem;
+      color: var(--muted);
+      word-break: break-all;
+      line-height: 1.5;
+    }
+
+    /* ---------- 响应式 ---------- */
+    @media (max-width: 768px) {
+      body { padding: 18px 12px 28px; }
+      .result-grid { grid-template-columns: 1fr 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>User Agent 分析工具</h1>
+    <p class="sub">自动分析并识别给定的 User Agent 字符串，解析浏览器、操作系统、设备类型等信息。</p>
+
+    <section class="input-section">
+      <label for="uaInput">请输入要分析的 User Agent 字符串：</label>
+      <textarea id="uaInput" spellcheck="false" placeholder="粘贴 User Agent 字符串..."></textarea>
+      <div class="btn-row">
+        <button type="button" id="analyzeBtn">分析 User Agent</button>
+        <button type="button" class="ghost" id="currentBtn">使用当前浏览器 UA</button>
+        <button type="button" class="ghost" id="clearBtn">清空</button>
+      </div>
+    </section>
+
+    <section class="result-section" id="resultSection">
+      <h2>分析结果</h2>
+      <div class="result-grid">
+        <div class="result-item">
+          <div class="label">浏览器</div>
+          <div class="value" id="resBrowser">—</div>
+        </div>
+        <div class="result-item">
+          <div class="label">浏览器版本</div>
+          <div class="value" id="resVersion">—</div>
+        </div>
+        <div class="result-item">
+          <div class="label">操作系统</div>
+          <div class="value" id="resOS">—</div>
+        </div>
+        <div class="result-item">
+          <div class="label">设备类型</div>
+          <div class="value" id="resDevice">—</div>
+        </div>
+        <div class="result-item">
+          <div class="label">渲染引擎</div>
+          <div class="value" id="resEngine">—</div>
+        </div>
+        <div class="result-item">
+          <div class="label">CPU 架构</div>
+          <div class="value" id="resCPU">—</div>
+        </div>
+      </div>
+      <div class="raw-ua">
+        <div class="label">原始 UA 字符串</div>
+        <div class="content" id="rawUA"></div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    (function () {
+      var uaInput = document.getElementById('uaInput');
+      var analyzeBtn = document.getElementById('analyzeBtn');
+      var currentBtn = document.getElementById('currentBtn');
+      var clearBtn = document.getElementById('clearBtn');
+      var resultSection = document.getElementById('resultSection');
+
+      var resBrowser = document.getElementById('resBrowser');
+      var resVersion = document.getElementById('resVersion');
+      var resOS = document.getElementById('resOS');
+      var resDevice = document.getElementById('resDevice');
+      var resEngine = document.getElementById('resEngine');
+      var resCPU = document.getElementById('resCPU');
+      var rawUA = document.getElementById('rawUA');
+
+      function setResult(el, value) {
+        el.textContent = value || '未知';
+        el.classList.toggle('empty', !value);
+      }
+
+      function analyze(ua) {
+        if (!ua || !ua.trim()) {
+          resultSection.classList.remove('show');
+          return;
+        }
+
+        var browser = '';
+        var version = '';
+        var os = '';
+        var device = '桌面设备';
+        var engine = '';
+        var cpu = '';
+
+        // 检测浏览器
+        if (ua.includes('Edg/') || ua.includes('Edge/')) {
+          browser = 'Edge';
+          var m = ua.match(/Edg(?:e|A|iOS)?\/([\d.]+)/);
+          if (m) version = m[1];
+        } else if (ua.includes('OPR/') || ua.includes('Opera/')) {
+          browser = 'Opera';
+          var m = ua.match(/OPR\/([\d.]+)/) || ua.match(/Opera\/([\d.]+)/);
+          if (m) version = m[1];
+        } else if (ua.includes('Firefox/')) {
+          browser = 'Firefox';
+          var m = ua.match(/Firefox\/([\d.]+)/);
+          if (m) version = m[1];
+        } else if (ua.includes('Chrome/')) {
+          browser = 'Chrome';
+          var m = ua.match(/Chrome\/([\d.]+)/);
+          if (m) version = m[1];
+        } else if (ua.includes('Safari/') && ua.includes('Version/')) {
+          browser = 'Safari';
+          var m = ua.match(/Version\/([\d.]+)/);
+          if (m) version = m[1];
+        } else if (ua.includes('MSIE ') || ua.includes('Trident/')) {
+          browser = 'Internet Explorer';
+          var m = ua.match(/MSIE ([\d.]+)/) || ua.match(/rv:([\d.]+)/);
+          if (m) version = m[1];
+        } else if (ua.includes('SamsungBrowser/')) {
+          browser = 'Samsung Internet';
+          var m = ua.match(/SamsungBrowser\/([\d.]+)/);
+          if (m) version = m[1];
+        } else if (ua.includes('CriOS/')) {
+          browser = 'Chrome iOS';
+          var m = ua.match(/CriOS\/([\d.]+)/);
+          if (m) version = m[1];
+        } else if (ua.includes('FxiOS/')) {
+          browser = 'Firefox iOS';
+          var m = ua.match(/FxiOS\/([\d.]+)/);
+          if (m) version = m[1];
+        }
+
+        // 检测操作系统
+        if (ua.includes('Windows NT 10.0')) os = 'Windows 10/11';
+        else if (ua.includes('Windows NT 6.3')) os = 'Windows 8.1';
+        else if (ua.includes('Windows NT 6.2')) os = 'Windows 8';
+        else if (ua.includes('Windows NT 6.1')) os = 'Windows 7';
+        else if (ua.includes('Windows NT 6.0')) os = 'Windows Vista';
+        else if (ua.includes('Windows NT 5.1')) os = 'Windows XP';
+        else if (ua.includes('Mac OS X')) {
+          var m = ua.match(/Mac OS X ([\d_]+)/);
+          os = 'macOS' + (m ? ' ' + m[1].replace(/_/g, '.') : '');
+        }
+        else if (ua.includes('iPhone') || ua.includes('iPad') || ua.includes('iPod')) {
+          var m = ua.match(/OS ([\d_]+)/);
+          os = 'iOS' + (m ? ' ' + m[1].replace(/_/g, '.') : '');
+        }
+        else if (ua.includes('Android')) {
+          var m = ua.match(/Android ([\d.]+)/);
+          os = 'Android' + (m ? ' ' + m[1] : '');
+        }
+        else if (ua.includes('Linux')) os = 'Linux';
+        else if (ua.includes('CrOS')) os = 'Chrome OS';
+
+        // 检测设备类型
+        if (ua.includes('Mobile') || ua.includes('Android') && ua.includes('Mobile')) {
+          device = '手机';
+        } else if (ua.includes('iPad') || ua.includes('Tablet')) {
+          device = '平板';
+        } else if (ua.includes('iPhone') || ua.includes('iPod')) {
+          device = '手机';
+        }
+
+        // 检测渲染引擎
+        if (ua.includes('AppleWebKit/')) {
+          var m = ua.match(/AppleWebKit\/([\d.]+)/);
+          engine = 'WebKit' + (m ? ' ' + m[1] : '');
+        } else if (ua.includes('Gecko/')) {
+          var m = ua.match(/Gecko\/([\d.]+)/);
+          engine = 'Gecko' + (m ? ' ' + m[1] : '');
+        } else if (ua.includes('Trident/')) {
+          var m = ua.match(/Trident\/([\d.]+)/);
+          engine = 'Trident' + (m ? ' ' + m[1] : '');
+        } else if (ua.includes('Presto/')) {
+          var m = ua.match(/Presto\/([\d.]+)/);
+          engine = 'Presto' + (m ? ' ' + m[1] : '');
+        }
+
+        // 检测 CPU 架构
+        if (ua.includes('Win64') || ua.includes('x64') || ua.includes('x86_64')) cpu = 'x64';
+        else if (ua.includes('WOW64')) cpu = 'x64 (WOW64)';
+        else if (ua.includes('i686') || ua.includes('i386')) cpu = 'x86';
+        else if (ua.includes('arm64') || ua.includes('aarch64')) cpu = 'ARM64';
+        else if (ua.includes('arm')) cpu = 'ARM';
+
+        // 显示结果
+        setResult(resBrowser, browser);
+        setResult(resVersion, version);
+        setResult(resOS, os);
+        setResult(resDevice, device);
+        setResult(resEngine, engine);
+        setResult(resCPU, cpu);
+        rawUA.textContent = ua.trim();
+
+        resultSection.classList.add('show');
+      }
+
+      analyzeBtn.addEventListener('click', function () {
+        analyze(uaInput.value);
+      });
+
+      currentBtn.addEventListener('click', function () {
+        uaInput.value = navigator.userAgent;
+        analyze(uaInput.value);
+      });
+
+      clearBtn.addEventListener('click', function () {
+        uaInput.value = '';
+        resultSection.classList.remove('show');
+        uaInput.focus();
+      });
+
+      // 支持 Ctrl+Enter 快捷分析
+      uaInput.addEventListener('keydown', function (e) {
+        if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+          e.preventDefault();
+          analyze(uaInput.value);
+        }
+      });
+
+      // 默认加载当前浏览器 UA 并分析
+      uaInput.value = navigator.userAgent;
+      analyze(uaInput.value);
+    })();
+  </script>
+</body>
+</html>
