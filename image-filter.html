@@ -425,9 +425,12 @@
 
     /* ---------- 响应式 ---------- */
     @media (max-width: 820px) {
+      html, body { height: auto; }
+      body { overflow: visible; }
+
       .layout {
         grid-template-columns: 1fr;
-        grid-template-rows: auto minmax(300px, 55vh);
+        grid-template-rows: auto auto;
       }
       .column.left { border-right: none; border-bottom: 1px solid var(--border); }
       .column.left { flex: 0 0 auto; }
@@ -439,7 +442,23 @@
         gap: 16px;
         align-items: start;
       }
-      .preview { min-height: 260px; padding: 14px; }
+      .preview { min-height: 300px; padding: 14px; }
+
+      /* 修复移动端按钮重叠问题 */
+      .col-head {
+        flex-wrap: wrap;
+        padding: 10px 12px;
+      }
+      .col-head .actions {
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .col-head .actions button,
+      .col-head .actions select {
+        flex: 1;
+        min-width: 0;
+      }
+
       header h1 { font-size: 15px; }
     }
   </style>
