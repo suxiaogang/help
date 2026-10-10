@@ -63,11 +63,11 @@
       color: var(--muted);
     }
 
-    /* ---------- 两列布局：各占一半，整屏铺满 ---------- */
+    /* ---------- 两列布局：左窄右宽 ---------- */
     .layout {
       flex: 1 1 auto;
       display: grid;
-      grid-template-columns: minmax(320px, 1fr) minmax(320px, 1fr);
+      grid-template-columns: minmax(340px, 380px) minmax(0, 1fr);
       min-height: 0;            /* 关键：允许子项在 grid 中收缩，才不会出现外层滚动条 */
     }
 
@@ -209,9 +209,10 @@
       height: 34px;
       cursor: pointer;
       user-select: none;
+      padding-top: 8px;
     }
     .switch input { width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; }
-    .switch span { font-size: 12px; }
+    .switch span { font-size: 12px; line-height: 1; }
 
     /* ---------- 左列：图片列表（唯一可滚动区） ---------- */
     .list {
