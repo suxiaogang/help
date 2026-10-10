@@ -1,0 +1,1803 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>模板拼图</title>
+  <style>
+    :root {
+      --bg: #0e1116;
+      --panel: #171c24;
+      --panel-2: #1e2632;
+      --border: #2a3340;
+      --text: #e8edf4;
+      --muted: #8b97a8;
+      --accent: #3dd68c;
+      --accent-2: #2bb673;
+      --danger: #ff6b6b;
+      --ok: #3dd68c;
+      --radius: 10px;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+              "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      height: 100%;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      font-size: 13px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ---------- 页头 ---------- */
+    header {
+      flex: 0 0 auto;
+      padding: 12px 22px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    header h1 {
+      font-size: 16px;
+      margin: 0;
+      font-weight: 600;
+      letter-spacing: .3px;
+    }
+
+    header .hint {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    /* ---------- 两列布局：左窄右宽 ---------- */
+    .layout {
+      flex: 1 1 auto;
+      display: grid;
+      grid-template-columns: minmax(340px, 380px) minmax(0, 1fr);
+      min-height: 0;
+    }
+
+    .column {
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      min-width: 0;
+    }
+
+    .column.left  { border-right: 1px solid var(--border); }
+
+    .col-head {
+      flex: 0 0 auto;
+      padding: 10px 16px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      letter-spacing: .5px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      border-bottom: 1px solid var(--border);
+      flex-wrap: wrap;
+      /* 明确行高：否则多行文字（如副标题变长）会让高度落到 .5 像素，
+         连带把预览区高度算成小数，居中的画布就停在半设备像素上。 */
+      line-height: 18px;
+      min-height: 38px;
+    }
+
+    .col-head .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+    /* ---------- 按钮 ---------- */
+    button {
+      font: inherit;
+      font-size: 12px;
+      padding: 6px 12px;
+      border-radius: 7px;
+      border: 1px solid var(--border);
+      background: var(--panel-2);
+      color: var(--text);
+      cursor: pointer;
+      transition: background .15s, border-color .15s, opacity .15s;
+      white-space: nowrap;
+    }
+    button:hover:not(:disabled) { background: #232c39; border-color: #3a4557; }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+
+    button.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #062315;
+      font-weight: 600;
+    }
+    button.primary:hover:not(:disabled) { background: var(--accent-2); border-color: var(--accent-2); }
+
+    /* ---------- 左列：添加区 ---------- */
+    .drop {
+      flex: 0 0 auto;
+      margin: 12px 14px;
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 18px 14px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color .2s, background-color .2s;
+    }
+    .drop:hover,
+    .drop.dragover {
+      border-color: var(--accent);
+      background: rgba(61, 214, 140, .06);
+    }
+    .drop .icon { font-size: 26px; }
+    .drop .text { color: var(--muted); font-size: 12px; margin-top: 4px; line-height: 1.5; }
+    .drop .text b { color: var(--text); }
+    .drop input[type="file"] { display: none; }
+
+    /* ---------- 左列：比例选择 ---------- */
+    .section-title {
+      flex: 0 0 auto;
+      padding: 14px 14px 8px;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--muted);
+      letter-spacing: .4px;
+    }
+
+    /* 5 个比例排成一行，高度比两行省一半 */
+    .ratio-grid {
+      flex: 0 0 auto;
+      padding: 0 14px 12px;
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 6px;
+    }
+
+    .ratio-item {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 5px;
+      padding: 7px 3px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      cursor: pointer;
+      transition: border-color .15s, background-color .15s;
+    }
+    .ratio-item:hover {
+      border-color: #3a4557;
+      background: var(--panel-2);
+    }
+    .ratio-item.active {
+      border-color: var(--accent);
+      background: rgba(61, 214, 140, .08);
+    }
+
+    .ratio-preview {
+      width: 34px;
+      height: 34px;
+      background: var(--panel-2);
+      border: 2px solid var(--border);
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+    .ratio-item.active .ratio-preview {
+      border-color: var(--accent);
+    }
+
+    .ratio-preview svg {
+      width: 20px;
+      height: 20px;
+      opacity: 0.6;
+    }
+    .ratio-item.active .ratio-preview svg {
+      opacity: 1;
+    }
+
+    .ratio-label {
+      font-size: 11px;
+      color: var(--muted);
+      font-weight: 500;
+    }
+    .ratio-item.active .ratio-label {
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    /* ---------- 左列：模板选择 ---------- */
+    /* 4 列排布：7 个模板只占两行，比 3 列省下一整行的高度，
+       左栏才留得下图片列表的位置（否则列表被压扁、页面出现滚动条）。 */
+    .template-grid {
+      flex: 0 0 auto;
+      padding: 0 14px 12px;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 7px;
+    }
+
+    .template-item {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 5px;
+      padding: 8px 4px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      cursor: pointer;
+      transition: border-color .15s, background-color .15s, opacity .15s;
+    }
+    .template-item:hover {
+      border-color: #3a4557;
+      background: var(--panel-2);
+    }
+    .template-item.active {
+      border-color: var(--accent);
+      background: rgba(61, 214, 140, .08);
+    }
+
+    /* 张数对不上的模板：置灰 + 禁用光标。
+       不用 pointer-events:none —— 那会连带禁掉 title 悬停提示，
+       用户就看不到「为什么不可用」。点击由 JS 拦截。 */
+    .template-item.unusable {
+      opacity: .32;
+      cursor: not-allowed;
+    }
+    .template-item.unusable:hover {
+      border-color: var(--border);
+      background: var(--panel);
+      opacity: .45;
+    }
+
+    /* 右上角标注该模板需要的图片张数 */
+    .template-item .cnt {
+      position: absolute;
+      top: 4px;
+      right: 5px;
+      font-family: var(--mono);
+      font-size: 9.5px;
+      font-weight: 700;
+      line-height: 14px;
+      padding: 0 4px;
+      border-radius: 4px;
+      color: var(--muted);
+      background: var(--bg);
+      border: 1px solid var(--border);
+      pointer-events: none;
+    }
+    .template-item.fit .cnt {
+      color: #062315;
+      background: var(--accent);
+      border-color: var(--accent);
+    }
+
+    .template-preview {
+      width: 42px;
+      height: 42px;
+      background: var(--panel-2);
+      border: 2px solid var(--border);
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+    }
+    .template-item.active .template-preview {
+      border-color: var(--accent);
+    }
+
+    .template-preview svg {
+      width: 28px;
+      height: 28px;
+      opacity: 0.6;
+    }
+    .template-item.active .template-preview svg {
+      opacity: 1;
+    }
+
+    /* ---------- 左列：拼图样式（间距 / 背景色） ---------- */
+    .style-row {
+      flex: 0 0 auto;
+      padding: 0 14px 12px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .field { min-width: 0; }
+    .field > label {
+      display: block;
+      margin-bottom: 5px;
+      font-size: 11px;
+      color: var(--muted);
+      font-weight: 600;
+    }
+    /* 统一控件行高：滑块行原本只有 15px、色块行 26px，
+       顶边虽对齐，视觉中心却差 5px，看起来就是「没对齐」。
+       固定成同一高度后两者中心重合。 */
+    .field-ctl {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      min-height: 26px;
+    }
+
+    .field-val {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--text);
+      min-width: 30px;
+      text-align: right;
+    }
+
+    input[type="range"] {
+      -webkit-appearance: none;
+      appearance: none;
+      flex: 1 1 auto;
+      min-width: 0;
+      height: 4px;
+      border-radius: 3px;
+      background: var(--border);
+      outline: none;
+      cursor: pointer;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 14px; height: 14px;
+      border-radius: 50%;
+      background: var(--accent);
+      border: 2px solid var(--bg);
+      cursor: grab;
+    }
+    input[type="range"]::-moz-range-thumb {
+      width: 12px; height: 12px;
+      border-radius: 50%;
+      background: var(--accent);
+      border: 2px solid var(--bg);
+      cursor: grab;
+    }
+
+    input[type="color"] {
+      width: 30px; height: 26px;
+      padding: 0;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--panel-2);
+      cursor: pointer;
+      flex: 0 0 auto;
+    }
+    input[type="color"]::-webkit-color-swatch-wrapper { padding: 2px; }
+    input[type="color"]::-webkit-color-swatch { border: none; border-radius: 3px; }
+    input[type="color"]::-moz-color-swatch { border: none; border-radius: 3px; }
+
+    /* ---------- 左列：图片列表 ---------- */
+    .list {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow-y: auto;
+      padding: 10px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+    }
+
+    .item {
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 6px 8px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+    }
+
+    .item .idx {
+      flex: 0 0 auto;
+      width: 22px; height: 22px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--panel-2);
+      border-radius: 6px;
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--accent);
+    }
+
+    .item .thumb {
+      flex: 0 0 auto;
+      width: 40px; height: 40px;
+      border-radius: 6px;
+      background: #0a0d12;
+      object-fit: contain;
+    }
+
+    .item .info { flex: 1 1 auto; min-width: 0; }
+    .item .name {
+      font-size: 12px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .item .meta {
+      font-size: 10.5px;
+      color: var(--muted);
+      font-family: var(--mono);
+      margin-top: 2px;
+    }
+
+    .item .ops { flex: 0 0 auto; display: flex; gap: 4px; }
+    .item .ops button { padding: 3px 7px; font-size: 11px; }
+
+    /* ---------- 右列：预览 ---------- */
+    /* position:relative —— canvas 若要脱离文档流定位，容器必须是它的包含块，
+       否则会跑到更外层的定位祖先上、溢出到预览区之外。 */
+    .preview {
+      flex: 1 1 auto;
+      min-height: 0;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      overflow: hidden;
+      background: #0a0d12;
+    }
+
+    .preview canvas {
+      display: block;
+      position: absolute;      /* 由 snapToDevice 精确定位到整设备像素 */
+      border-radius: 6px;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, .4);
+      touch-action: none;      /* 允许在预览上拖动图片调位置 */
+      user-select: none;
+      cursor: grab;            /* 提示「这里可以拖动图片」 */
+    }
+    .preview canvas.dragging { cursor: grabbing; }
+
+    /* 拖动时整块画布不允许选中文本 */
+    body.dragging-preview, body.dragging-preview * { cursor: grabbing !important; }
+
+    .placeholder {
+      color: var(--muted);
+      font-size: 12.5px;
+      text-align: center;
+      line-height: 2;
+      user-select: none;
+    }
+    .placeholder .big { font-size: 34px; display: block; margin-bottom: 4px; opacity: .5; }
+
+    /* ---------- 右列：底部信息 + 导出 ---------- */
+    .meta-bar {
+      flex: 0 0 auto;
+      padding: 8px 18px;
+      border-top: 1px solid var(--border);
+      font-size: 12px;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      min-height: 38px;
+    }
+    .meta-bar b { color: var(--text); font-weight: 600; font-family: var(--mono); }
+
+    /* ---------- 右列：单图缩放条 ---------- */
+    .zoom-bar {
+      flex: 0 0 auto;
+      padding: 7px 18px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .zoom-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--muted);
+      white-space: nowrap;
+      min-width: 42px;
+    }
+    .zoom-btns { display: flex; align-items: center; gap: 8px; flex: 1 1 auto; min-width: 0; }
+    .zoom-btns > button { flex: 0 0 auto; padding: 3px 10px; line-height: 1.3; }
+    .zoom-btns input[type="range"] { flex: 1 1 auto; }
+    .zoom-val {
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--accent);
+      min-width: 42px;
+      text-align: right;
+      white-space: nowrap;
+    }
+
+    .status {
+      flex: 0 0 auto;
+      padding: 8px 18px;
+      font-size: 12px;
+      border-top: 1px solid var(--border);
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 36px;
+    }
+    .status.error { color: var(--danger); }
+    .status.ok    { color: var(--ok); }
+    .dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--muted);
+      flex: none;
+    }
+    .status.error .dot { background: var(--danger); }
+    .status.ok .dot    { background: var(--ok); }
+
+    /* ---------- 响应式：窄屏改上下，允许整页滚动 ---------- */
+    @media (max-width: 820px) {
+      html, body { height: auto; }
+      body { overflow: visible; }
+
+      .layout {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto auto;
+        min-height: 0;
+      }
+
+      .column.left {
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .list { max-height: 46vh; }
+      .column.right { min-height: 60vh; }
+      .preview { min-height: 40vh; }
+
+      .ratio-grid {
+        grid-template-columns: repeat(5, 1fr);
+      }
+      .template-grid {
+        grid-template-columns: repeat(4, 1fr);
+      }
+
+      header h1 { font-size: 15px; }
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>模板拼图</h1>
+    <span class="hint">选择模板快速拼图 · 全部在本地浏览器完成，图片不上传</span>
+  </header>
+
+  <div class="layout">
+
+    <!-- ================= 左列：输入 ================= -->
+    <section class="column left">
+
+      <div class="col-head"><span>添加图片</span></div>
+
+      <div class="drop" id="drop">
+        <div class="icon">🖼️</div>
+        <div class="text"><b>点击选择</b>（可多选），或把多张图片拖到这里<br />也可以直接 Ctrl/⌘ + V 粘贴</div>
+        <input type="file" id="fileInput" accept="image/*" multiple />
+      </div>
+
+      <div class="section-title">选择比例</div>
+      <div class="ratio-grid">
+        <div class="ratio-item">
+          <div class="ratio-preview">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <rect x="6" y="4" width="12" height="16" rx="1" />
+            </svg>
+          </div>
+          <span class="ratio-label">3:4</span>
+        </div>
+        <div class="ratio-item">
+          <div class="ratio-preview">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <rect x="4" y="6" width="16" height="12" rx="1" />
+            </svg>
+          </div>
+          <span class="ratio-label">4:3</span>
+        </div>
+        <div class="ratio-item">
+          <div class="ratio-preview">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <rect x="6" y="6" width="12" height="12" rx="1" />
+            </svg>
+          </div>
+          <span class="ratio-label">正方形</span>
+        </div>
+        <div class="ratio-item">
+          <div class="ratio-preview">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <rect x="6" y="2" width="12" height="20" rx="1" />
+            </svg>
+          </div>
+          <span class="ratio-label">9:16</span>
+        </div>
+        <div class="ratio-item">
+          <div class="ratio-preview">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <rect x="2" y="6" width="20" height="12" rx="1" />
+            </svg>
+          </div>
+          <span class="ratio-label">16:9</span>
+        </div>
+      </div>
+
+      <div class="section-title">选择模板</div>
+      <div class="template-grid">
+        <div class="template-item">
+          <div class="template-preview">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+              <rect x="2" y="2" width="6" height="20" rx="1" />
+              <rect x="9" y="2" width="6" height="20" rx="1" />
+              <rect x="16" y="2" width="6" height="20" rx="1" />
+            </svg>
+          </div>
+        </div>
+        <div class="template-item">
+          <div class="template-preview">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+              <rect x="2" y="2" width="9.5" height="9.5" rx="1" />
+              <rect x="12.5" y="2" width="9.5" height="9.5" rx="1" />
+              <rect x="2" y="12.5" width="20" height="9.5" rx="1" />
+            </svg>
+          </div>
+        </div>
+        <div class="template-item">
+          <div class="template-preview">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+              <rect x="2" y="2" width="9" height="9" rx="1" />
+              <rect x="13" y="2" width="9" height="9" rx="1" />
+              <rect x="2" y="13" width="9" height="9" rx="1" />
+              <rect x="13" y="13" width="9" height="9" rx="1" />
+            </svg>
+          </div>
+        </div>
+        <div class="template-item">
+          <div class="template-preview">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+              <rect x="2" y="2" width="6" height="9" rx="1" />
+              <rect x="9" y="2" width="6" height="9" rx="1" />
+              <rect x="16" y="2" width="6" height="9" rx="1" />
+              <rect x="2" y="13" width="6" height="9" rx="1" />
+              <rect x="9" y="13" width="6" height="9" rx="1" />
+              <rect x="16" y="13" width="6" height="9" rx="1" />
+            </svg>
+          </div>
+        </div>
+        <div class="template-item">
+          <div class="template-preview">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+              <rect x="2" y="2" width="9" height="6" rx="1" />
+              <rect x="13" y="2" width="9" height="6" rx="1" />
+              <rect x="2" y="9" width="9" height="6" rx="1" />
+              <rect x="13" y="9" width="9" height="6" rx="1" />
+              <rect x="2" y="16" width="9" height="6" rx="1" />
+              <rect x="13" y="16" width="9" height="6" rx="1" />
+            </svg>
+          </div>
+        </div>
+        <div class="template-item">
+          <div class="template-preview">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+              <rect x="2" y="3" width="9" height="8" rx="1" />
+              <rect x="13" y="3" width="9" height="8" rx="1" />
+              <rect x="2" y="13" width="4.5" height="8" rx="1" />
+              <rect x="6.5" y="13" width="4.5" height="8" rx="1" />
+              <rect x="13" y="13" width="4.5" height="8" rx="1" />
+              <rect x="17.5" y="13" width="4.5" height="8" rx="1" />
+            </svg>
+          </div>
+        </div>
+        <div class="template-item">
+          <div class="template-preview">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+              <rect x="2" y="2" width="6" height="6" rx="1" />
+              <rect x="9" y="2" width="6" height="6" rx="1" />
+              <rect x="16" y="2" width="6" height="6" rx="1" />
+              <rect x="2" y="9" width="6" height="6" rx="1" />
+              <rect x="9" y="9" width="6" height="6" rx="1" />
+              <rect x="16" y="9" width="6" height="6" rx="1" />
+              <rect x="2" y="16" width="6" height="6" rx="1" />
+              <rect x="9" y="16" width="6" height="6" rx="1" />
+              <rect x="16" y="16" width="6" height="6" rx="1" />
+            </svg>
+          </div>
+        </div>
+      </div>
+
+      <div class="section-title">拼图样式</div>
+      <div class="style-row">
+        <div class="field">
+          <label for="gapRange">图片间距</label>
+          <div class="field-ctl">
+            <input type="range" id="gapRange" min="0" max="40" step="1" value="0" />
+            <span class="field-val" id="gapVal">0</span>
+          </div>
+        </div>
+        <div class="field">
+          <label for="bgColor">背景色</label>
+          <div class="field-ctl">
+            <input type="color" id="bgColor" value="#ffffff" />
+            <span class="field-val" id="bgVal">#ffffff</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-head">
+        <span>已添加 <b id="listCount">0</b> 张 · 按顺序填充</span>
+        <div class="actions">
+          <button type="button" id="clearBtn">清空</button>
+        </div>
+      </div>
+
+      <div class="list" id="list"></div>
+    </section>
+
+    <!-- ================= 右列：输出 ================= -->
+    <section class="column right">
+
+      <div class="col-head">
+        <span>拼图预览</span>
+        <span id="previewDim" style="font-family:var(--mono);font-weight:400"></span>
+      </div>
+
+      <div class="preview" id="preview">
+        <div class="placeholder" id="placeholder">
+          <span class="big">🖼️</span>
+          选择图片后<br>这里显示拼图预览
+        </div>
+      </div>
+
+      <div class="meta-bar" id="metaBar"></div>
+
+      <!-- 选中格子后的单图缩放：滚轮在画布上直接缩放，这里做精确微调 -->
+      <div class="zoom-bar hidden" id="zoomBar">
+        <span class="zoom-label" id="zoomLabel">第 1 格</span>
+        <div class="zoom-btns">
+          <button type="button" id="zoomOutBtn" title="缩小（以铺满为下限）">−</button>
+          <input type="range" id="zoomRange" min="1" max="8" step="0.01" value="1" />
+          <button type="button" id="zoomInBtn" title="放大">+</button>
+          <span class="zoom-val" id="zoomVal">1.0×</span>
+          <button type="button" id="zoomResetBtn" title="复位：铺满且居中">复位</button>
+        </div>
+      </div>
+
+      <div class="col-head">
+        <span>导出</span>
+        <div class="actions">
+          <button type="button" class="primary" id="exportBtn" disabled>导出图片</button>
+        </div>
+      </div>
+
+      <div class="status" id="status"><span class="dot"></span><span id="statusText">还没有添加图片。</span></div>
+    </section>
+  </div>
+
+  <script>
+  (function () {
+    "use strict";
+
+    /* ============================================================
+       模板定义
+       坐标沿用 24×24 的 viewBox，与左栏图标一一对应，
+       cells: [x, y, w, h]，取值 0~1 的归一化坐标（满幅铺开）。
+
+       注意：这里刻意不复用图标 SVG 的 24×24 坐标。那套坐标里的
+       2 个单位外边距、1 个单位格距，是为了让小图标看起来有留白；
+       直接换算到 1600px 的输出上会变成 133px 边距、66px 缝，
+       完全不像拼图。真正决定观感的是 gap 参数（默认 0 缝）。
+       ============================================================ */
+    var TEMPLATES = [
+      // 1. 三竖条 · 3 张
+      { name: "三竖条", need: 3, cells: [
+        [0, 0, 1/3, 1], [1/3, 0, 1/3, 1], [2/3, 0, 1/3, 1]
+      ]},
+      // 2. 上二下一 · 3 张
+      { name: "上二下一", need: 3, cells: [
+        [0, 0, 0.5, 0.58], [0.5, 0, 0.5, 0.58], [0, 0.58, 1, 0.42]
+      ]},
+      // 3. 四宫格 · 4 张
+      { name: "四宫格", need: 4, cells: [
+        [0, 0, 0.5, 0.5], [0.5, 0, 0.5, 0.5], [0, 0.5, 0.5, 0.5], [0.5, 0.5, 0.5, 0.5]
+      ]},
+      // 4. 三列两行 · 6 张
+      { name: "三列两行", need: 6, cells: [
+        [0, 0, 1/3, 0.5], [1/3, 0, 1/3, 0.5], [2/3, 0, 1/3, 0.5],
+        [0, 0.5, 1/3, 0.5], [1/3, 0.5, 1/3, 0.5], [2/3, 0.5, 1/3, 0.5]
+      ]},
+      // 5. 二列三行 · 6 张（与「三列两行」转置，适配竖图）
+      { name: "二列三行", need: 6, cells: [
+        [0, 0, 0.5, 1/3], [0.5, 0, 0.5, 1/3],
+        [0, 1/3, 0.5, 1/3], [0.5, 1/3, 0.5, 1/3],
+        [0, 2/3, 0.5, 1/3], [0.5, 2/3, 0.5, 1/3]
+      ]},
+      // 6. 上二下四 · 6 张
+      { name: "上二下四", need: 6, cells: [
+        [0, 0, 0.5, 0.45], [0.5, 0, 0.5, 0.45],
+        [0, 0.45, 0.25, 0.55], [0.25, 0.45, 0.25, 0.55],
+        [0.5, 0.45, 0.25, 0.55], [0.75, 0.45, 0.25, 0.55]
+      ]},
+      // 7. 九宫格 · 9 张
+      { name: "九宫格", need: 9, cells: [
+        [0, 0, 1/3, 1/3], [1/3, 0, 1/3, 1/3], [2/3, 0, 1/3, 1/3],
+        [0, 1/3, 1/3, 1/3], [1/3, 1/3, 1/3, 1/3], [2/3, 1/3, 1/3, 1/3],
+        [0, 2/3, 1/3, 1/3], [1/3, 2/3, 1/3, 1/3], [2/3, 2/3, 1/3, 1/3]
+      ]}
+    ];
+
+    /* 比例：宽高比，用于决定输出画布形状 */
+    var RATIOS = [
+      { label: "3:4", w: 3, h: 4 },
+      { label: "4:3", w: 4, h: 3 },
+      { label: "正方形", w: 1, h: 1 },
+      { label: "9:16", w: 9, h: 16 },
+      { label: "16:9", w: 16, h: 9 }
+    ];
+
+    var LONG_EDGE = 1600;    // 输出长边像素
+    var MAX_EDGE = 8000;     // 安全上限
+
+    /* ============================================================
+       DOM
+       ============================================================ */
+    var drop        = document.getElementById("drop");
+    var fileInput   = document.getElementById("fileInput");
+    var list        = document.getElementById("list");
+    var listCount   = document.getElementById("listCount");
+    var clearBtn    = document.getElementById("clearBtn");
+    var preview     = document.getElementById("preview");
+    var previewDim  = document.getElementById("previewDim");
+    var metaBar     = document.getElementById("metaBar");
+    var exportBtn   = document.getElementById("exportBtn");
+    var statusEl    = document.getElementById("status");
+    var statusText  = document.getElementById("statusText");
+    var gapRange    = document.getElementById("gapRange");
+    var gapVal      = document.getElementById("gapVal");
+    var bgColorIn   = document.getElementById("bgColor");
+    var bgVal       = document.getElementById("bgVal");
+    var zoomBar     = document.getElementById("zoomBar");
+    var zoomLabel   = document.getElementById("zoomLabel");
+    var zoomRange   = document.getElementById("zoomRange");
+    var zoomVal     = document.getElementById("zoomVal");
+    var zoomInBtn   = document.getElementById("zoomInBtn");
+    var zoomOutBtn  = document.getElementById("zoomOutBtn");
+    var zoomResetBtn= document.getElementById("zoomResetBtn");
+
+    var ratioItems    = Array.prototype.slice.call(document.querySelectorAll(".ratio-item"));
+    var templateItems = Array.prototype.slice.call(document.querySelectorAll(".template-item"));
+
+    /* ============================================================
+       状态
+       ============================================================ */
+    var images = [];        // { name, w, h, img, url }
+    /* -1 表示尚未选择。初始不预选任何比例/模板，
+       避免用户还没决定就被当成已经选好了。 */
+    var curRatio = -1;
+    var curTpl = -1;
+    var cellCv = null;      // 预览画布，复用节点以保住指针捕获
+    var cellCtx = null;
+    var dragCell = -1;      // 正在拖动的格子下标
+    var selCell = -1;       // 缩放条当前针对的格子
+    var ZOOM_MAX = 8;       // 放大上限（1 = 铺满）
+    var dragOff = null;     // 本次拖动的累计位移（画布像素）
+    var offsets = [];       // 每个格子已保存的位移，松手后依然保留
+    var zooms = [];         // 每个格子的放大倍数，1 = 铺满
+    var rafPending = false;
+    var loading = false;    // 还有图片在读取
+    var pendingTpl = -1;    // 图片加载期间用户点过、待兑现的模板
+
+    /* ============================================================
+       工具
+       ============================================================ */
+    function setStatus(text, kind) {
+      statusText.textContent = text;
+      statusEl.className = "status" + (kind ? " " + kind : "");
+    }
+
+    function clamp(v, lo, hi) {
+      return Math.max(lo, Math.min(v, hi));
+    }
+
+    function clampInt(v, lo, hi) {
+      v = Math.round(Number(v) || 0);
+      return Math.max(lo, Math.min(hi, v));
+    }
+
+    function revokeAll() {
+      images.forEach(function (it) { if (it.url) URL.revokeObjectURL(it.url); });
+      images = [];
+      offsets = [];
+      zooms = [];
+      selCell = -1;
+      syncZoomBar();
+    }
+
+    /* ============================================================
+       几何：把模板坐标换算成输出画布上的矩形
+       ============================================================ */
+    function outputSize() {
+      // 未选比例时按正方形出图，仅用于占位，用户选定后会重算
+      var r = curRatio >= 0 ? RATIOS[curRatio] : { w: 1, h: 1, label: "未选择" };
+      if (r.w >= r.h) {
+        return { w: LONG_EDGE, h: Math.round(LONG_EDGE * r.h / r.w) };
+      }
+      return { w: Math.round(LONG_EDGE * r.w / r.h), h: LONG_EDGE };
+    }
+
+    /* 格子之间的白缝，单位是输出画布像素。
+       为 0 时各图无缝贴合，这是拼图类工具的默认观感。 */
+    var GAP = 0;
+    var BG_COLOR = "#ffffff";   // 缝隙与外框的颜色
+
+    /* 该轴上模板是否把整幅切成 n 等分。
+       是则返回 n，否则返回 1（表示只要求整数像素即可）。
+       「上二下一」「上二下四」上下不等分，会落到 1。 */
+    function slicesOn(tpl, axis) {
+      var pos = axis === "x" ? 0 : 1;   // cells = [x, y, w, h]
+      var sizeIdx = pos + 2;
+      var edges = {};
+      tpl.cells.forEach(function (c) {
+        edges[Math.round(c[pos] * 10000)] = 1;
+        edges[Math.round((c[pos] + c[sizeIdx]) * 10000)] = 1;
+      });
+      var keys = Object.keys(edges).map(Number).sort(function (a, b) { return a - b; });
+      // 恰好两条边界 = 整幅只有一处切点，即二等分
+      if (keys.length !== 2) return 1;
+      if (keys[0] !== 0 || keys[1] !== 10000) return 1;
+      var w = keys[1] / 10000 - keys[0] / 10000;   // 0.5 / 1/3 / 0.25 …
+      var n = Math.round(1 / w);
+      return (n >= 2 && Math.abs(1 / n - w) < 1e-6) ? n : 1;
+    }
+
+    /* 返回 [{x,y,w,h}]，单位是输出画布像素。
+       模板坐标是 0~1 满幅，再按 gap 从四周各收一半，
+       相邻两格各让一半，拼出来正好是一条 gap 宽的缝。
+
+       边界一律取整：相邻两格用同一个边界值，不会因各自取整而错开半像素，
+       也就不会在拼接处留下被插值的细缝。 */
+    function cellRects(ow, oh) {
+      if (curTpl < 0) return [];
+      var tpl = TEMPLATES[curTpl];
+      var inset = GAP / 2;
+      return tpl.cells.map(function (c) {
+        var x0 = Math.round(c[0] * ow + inset);
+        var y0 = Math.round(c[1] * oh + inset);
+        var x1 = Math.round((c[0] + c[2]) * ow - inset);
+        var y1 = Math.round((c[1] + c[3]) * oh - inset);
+        return {
+          x: x0, y: y0,
+          w: Math.max(1, x1 - x0),
+          h: Math.max(1, y1 - y0)
+        };
+      });
+    }
+
+    /* ============================================================
+       绘制：把图片按「填满格子、不变形」的方式贴进去
+       ============================================================ */
+    /* 计算某张图在格子内的绘制尺寸与居中偏移。
+       zoom 是在「铺满格子」基础上的放大倍数（1 = 原始铺满）。
+       因为只按比例缩放，宽高比不变，所以放大不会让图变形；
+       放大后绘制尺寸变大，clampOffset 的可拖动范围也会自动跟着变大。 */
+    function fitCell(img, rect, zoom) {
+      // 目标格子的宽高比与原图不一致时，按较大的缩放比铺满（cover），
+      // 超出部分被裁掉，从而既填满又不变形
+      var scale = Math.max(rect.w / img.width, rect.h / img.height) * (zoom || 1);
+      var dw = img.width * scale;
+      var dh = img.height * scale;
+      return {
+        w: dw,
+        h: dh,
+        // 居中放置后的左上角相对格子的偏移
+        ox: (rect.w - dw) / 2,
+        oy: (rect.h - dh) / 2
+      };
+    }
+
+    /* 把拖动量限制在「刚好不露白」的范围内。
+       绘制位置 = ox + dx，要盖满格子需满足两条：
+         ox + dx <= 0            →  dx <= -ox
+         ox + dx + fit.w >= rect.w →  dx >= rect.w - fit.w - ox
+       ox 是居中偏移（图片溢出时为负），两式合起来就是一个对称区间。 */
+    function clampOffset(fit, rect, dx, dy) {
+      return {
+        x: clamp(dx, rect.w - fit.w - fit.ox, -fit.ox),
+        y: clamp(dy, rect.h - fit.h - fit.oy, -fit.oy)
+      };
+    }
+
+    function drawCell(ctx, img, rect, fit, dx, dy) {
+      // 居中放置后再叠加拖动偏移。
+      // fit 由调用方算好（已含该格的缩放倍数），这里必须直接用，
+      // 不能自己重算一遍，否则缩放会被悄悄丢掉。
+      var ox = fit.ox + (dx || 0);
+      var oy = fit.oy + (dy || 0);
+
+      ctx.save();
+      // 裁剪到格子范围，保证溢出的部分不会盖住相邻格子
+      ctx.beginPath();
+      ctx.rect(rect.x, rect.y, rect.w, rect.h);
+      ctx.clip();
+      ctx.imageSmoothingQuality = "high";
+      ctx.drawImage(img, rect.x + ox, rect.y + oy, fit.w, fit.h);
+      ctx.restore();
+    }
+
+    function compose(ctx, ow, oh) {
+      if (curTpl < 0) return;
+      var rects = cellRects(ow, oh);
+      var need = TEMPLATES[curTpl].need;
+
+      // 先铺底色：gap 露出的部分就是这条底色，
+      // 导出时才不会变成透明（或被清成黑色）
+      ctx.fillStyle = BG_COLOR;
+      ctx.fillRect(0, 0, ow, oh);
+
+      for (var i = 0; i < need; i++) {
+        var r = rects[i];
+        var it = images[i];
+
+        if (!it) {
+          // 缺图时画占位块，方便看出还差几张
+          ctx.fillStyle = "#171c24";
+          ctx.fillRect(r.x, r.y, r.w, r.h);
+          ctx.strokeStyle = "#2a3340";
+          ctx.lineWidth = Math.max(1, Math.round(ow / 600));
+          ctx.strokeRect(r.x, r.y, r.w, r.h);
+          continue;
+        }
+
+        // 拖动中的格子用实时位移，其余用已保存的位移
+        var live = dragCell === i ? dragOff : null;
+        var saved = offsets[i] || { x: 0, y: 0 };
+        var raw = live || saved;
+        var fit = fitCell(it.img, r, zooms[i]);
+        var cOff = clampOffset(fit, r, raw.x, raw.y);
+        drawCell(ctx, it.img, r, fit, cOff.x, cOff.y);
+      }
+    }
+
+    /* ============================================================
+       预览
+       ============================================================ */
+    function ensureCanvas() {
+      if (cellCv) return;
+      cellCv = document.createElement("canvas");
+      // 拖动时需要频繁读回画面做命中与校验，声明后走 CPU 路径更稳
+      cellCtx = cellCv.getContext("2d", { willReadFrequently: true });
+      preview.appendChild(cellCv);
+      attachDrag(cellCv);
+    }
+
+    /* 重建预览区的占位提示。
+       必须无条件清空预览区：早前只在 cellCv 存在时才清，
+       于是首屏那个静态占位元素会和新插入的重叠在一起。 */
+    function showPlaceholder(html) {
+      preview.innerHTML = "";
+      cellCv = cellCtx = null;
+      var ph = document.createElement("div");
+      ph.className = "placeholder";
+      ph.id = "placeholder";
+      ph.innerHTML = '<span class="big">🖼️</span>' + html;
+      preview.appendChild(ph);
+    }
+
+    function renderPreview() {
+      var count = images.length;
+      var need = curTpl >= 0 ? TEMPLATES[curTpl].need : -1;
+
+      // 没图 / 没选模板 / 张数对不上：都退回占位提示
+      if (!count || need < 0 || count !== need) {
+        showPlaceholder(
+          !count ? "选择图片后<br>这里显示拼图预览"
+        : need < 0 ? "已添加 <b>" + count + "</b> 张<br>请在左栏选择一个模板"
+        : "当前模板需要 <b>" + need + "</b> 张<br>已添加 <b>" + count + "</b> 张<br>该模板已不可用，请另选一个");
+        previewDim.textContent = "";
+        metaBar.innerHTML = "<span>" + (!count ? "等待添加图片"
+                                  : need < 0 ? "请选择模板" : "等待凑齐图片") + "</span>";
+        return;
+      }
+
+      // 有图、选了模板且张数匹配：移除占位、改用画布
+      ph0();
+      ensureCanvas();
+
+      var size = outputSize();
+      var pad = 24;
+      var availW = Math.max(1, preview.clientWidth - pad);
+      var availH = Math.max(1, preview.clientHeight - pad);
+
+      /* 预览按「设备像素」绘制，而不是 CSS 像素。
+         否则在 2x 屏上，画布只有 CSS 尺寸那么大，浏览器要放大一倍才能填满，
+         画面发虚，同时格子边界被插值 —— 这正是「有缝 + 不清晰」的来源。 */
+      var dpr = window.devicePixelRatio || 1;
+      var tpl = TEMPLATES[curTpl];
+      // 步长取「分割份数 × dpr」：既保证格子边界是整数，
+      // 也保证显示尺寸恰好落在设备像素网格上，不会被浏览器二次缩放。
+      var stepX = slicesOn(tpl, "x") * dpr;
+      var stepY = slicesOn(tpl, "y") * dpr;
+
+      var maxDevW = Math.floor(availW * dpr / stepX) * stepX;
+      var maxDevH = Math.floor(availH * dpr / stepY) * stepY;
+      maxDevW = Math.max(stepX, maxDevW);
+      maxDevH = Math.max(stepY, maxDevH);
+
+      // 再按输出比例收敛，取能放下的最大整数倍
+      var fitScale = Math.min(maxDevW / size.w, maxDevH / size.h);
+      if (!isFinite(fitScale) || fitScale <= 0) fitScale = 0.1;
+
+      var dw = Math.max(stepX, Math.floor(size.w * fitScale / stepX) * stepX);
+      var dh = Math.max(stepY, Math.floor(size.h * fitScale / stepY) * stepY);
+
+      cellCv.width = dw;
+      cellCv.height = dh;
+      // CSS 尺寸 = 设备像素 / dpr，天然是整数，不触发缩放
+      cellCv.style.width = (dw / dpr) + "px";
+      cellCv.style.height = (dh / dpr) + "px";
+
+      /* 画布尺寸虽已对齐，位置仍可能落在半个设备像素上。
+         必须在布局稳定后再量：刚设完 style 时浏览器尚未完成 flex 居中，
+         此时 getBoundingClientRect 拿到的是旧位置。
+         放到 rAF 里量，偏移量用「第二次测量」纠正一次。 */
+      requestAnimationFrame(function () { snapToDevice(cellCv, dpr); });
+
+      cellCtx.clearRect(0, 0, dw, dh);
+      compose(cellCtx, dw, dh);
+
+      previewDim.textContent = size.w + " × " + size.h + " px";
+      metaBar.innerHTML =
+        "输出 <b>" + size.w + "×" + size.h + "</b>" +
+        '<span style="opacity:.4">·</span>' +
+        "比例 <b>" + (curRatio >= 0 ? RATIOS[curRatio].label : "未选择") + "</b>" +
+        '<span style="opacity:.4">·</span>' +
+        "模板 <b>" + TEMPLATES[curTpl].name + "</b>" +
+        '<span style="opacity:.4">·</span>' +
+        "<b>" + need + "</b> 张";
+    }
+
+    /* 把画布位置修正到整数设备像素。
+       画布在 flex 容器里居中时，纵向可能落在 .5 CSS 像素上；
+       dpr=2 时就是半个设备像素，浏览器对整块画布插值 → 格子交界处渗出细缝。
+
+       用 translate 而不是 margin：margin 会影响 flex 的居中计算，
+       补一点又被重新居中，容易在两个值之间来回抖。 */
+    /* 把画布位置修正到整数设备像素。
+       容器高度可能是 .5（flex 分摊剩余空间所致），居中后画布就停在
+       半设备像素上；浏览器会对整块画布插值，格子交界处就渗出细缝。
+       用 absolute + top/left 接管定位：flex 不再参与，不会把偏移抹掉。 */
+    function snapToDevice(el, dpr) {
+      var prev = el.parentNode;
+      var r = el.getBoundingClientRect();
+      var pr = prev.getBoundingClientRect();
+
+      // 容器高度可能是 .5（flex 分摊剩余空间），容器自身的原点也可能落在
+      // 半设备像素上。画布在容器内是居中的，所以先算出「容器内居中位置」，
+      // 再把该点吸附到最近的整设备像素，最后换算成容器内坐标。
+      var cx = pr.left + (pr.width - r.width) / 2;
+      var cy = pr.top + (pr.height - r.height) / 2;
+      var sx = (Math.round(cx * dpr) / dpr);
+      var sy = (Math.round(cy * dpr) / dpr);
+
+      if (getComputedStyle(el).position !== "absolute") el.style.position = "absolute";
+      el.style.left = (sx - pr.left).toFixed(2) + "px";
+      el.style.top = (sy - pr.top).toFixed(2) + "px";
+    }
+
+    /* ============================================================
+       单图缩放
+       缩放倍数 ≥ 1：以「铺满格子」为基准等比放大，所以永远不会变形，
+       也不可能因为缩小而露出底色。
+       ============================================================ */
+
+    function zoomOf(i) {
+      return zooms[i] || 1;
+    }
+
+    /* 设置某格缩放；下限固定为 1（再小就露白了） */
+    function setZoom(i, z) {
+      if (i < 0) return;
+      z = Math.max(1, Math.min(ZOOM_MAX, Number(z) || 1));
+      if (Math.abs(z - zoomOf(i)) < 1e-4) return;
+      zooms[i] = z;
+      // 放大后图片变大，原来的位移可能已越界，交给 clampOffset 收拢
+      scheduleRender();
+      syncZoomBar();
+    }
+
+    function selectCell(i) {
+      if (i === selCell) return;
+      selCell = i;
+      syncZoomBar();
+    }
+
+    function syncZoomBar() {
+      var need = curTpl >= 0 ? TEMPLATES[curTpl].need : 0;
+      var ok = selCell >= 0 && selCell < need;
+      zoomBar.classList.toggle("hidden", !ok);
+      if (!ok) return;
+      var z = zoomOf(selCell);
+      zoomLabel.textContent = "第 " + (selCell + 1) + " 格";
+      zoomRange.value = z;
+      zoomVal.textContent = z.toFixed(1) + "×";
+      zoomOutBtn.disabled = z <= 1.0001;
+    }
+
+    /* 双击复位：铺满 + 居中 */
+    function resetCell(i) {
+      if (i < 0) return;
+      zooms[i] = 1;
+      offsets[i] = { x: 0, y: 0 };
+      scheduleRender();
+      syncZoomBar();
+    }
+
+    /* 移除所有占位元素（不限于第一个，避免残留叠加） */
+    function ph0() {
+      var list = preview.querySelectorAll(".placeholder");
+      for (var i = 0; i < list.length; i++) {
+        if (list[i].parentNode) list[i].parentNode.removeChild(list[i]);
+      }
+    }
+
+    function scheduleRender() {
+      if (rafPending) return;
+      rafPending = true;
+      var done = false;
+      var run = function () {
+        if (done) return;
+        done = true;
+        rafPending = false;
+        renderPreview();
+      };
+      // 后台标签页里 rAF 会被节流甚至不触发，加 setTimeout 兜底
+      if (typeof requestAnimationFrame === "function") requestAnimationFrame(run);
+      setTimeout(run, 60);
+    }
+
+    /* ============================================================
+       拖动：按下命中某个格子后拖动该格子内的图片
+       ============================================================ */
+    function hitTest(clientX, clientY) {
+      var r = cellCv.getBoundingClientRect();
+      var px = (clientX - r.left) / r.width * cellCv.width;
+      var py = (clientY - r.top) / r.height * cellCv.height;
+      var rects = cellRects(cellCv.width, cellCv.height);
+
+      // 从后往前找，后面的格子在上层，优先命中
+      for (var i = rects.length - 1; i >= 0; i--) {
+        var c = rects[i];
+        if (px >= c.x && px <= c.x + c.w && py >= c.y && py <= c.y + c.h) return i;
+      }
+      return -1;
+    }
+
+    function attachDrag(cv) {
+      var startX = 0, startY = 0;
+      var seed = { x: 0, y: 0 };   // 按下时该格已保存的位移，拖动时在其上累加
+
+      cv.addEventListener("pointerdown", function (e) {
+        if (!cellCv || cellCv !== cv) return;
+        var i = hitTest(e.clientX, e.clientY);
+        if (i < 0) return;
+        dragCell = i;
+        // 从已保存的位移继续拖，不会跳回中心
+        var saved = offsets[i] || { x: 0, y: 0 };
+        seed.x = saved.x;
+        seed.y = saved.y;
+        dragOff = { x: seed.x, y: seed.y };
+        startX = e.clientX;
+        startY = e.clientY;
+        document.body.classList.add("dragging-preview");
+        cv.classList.add("dragging");
+        try { cv.setPointerCapture(e.pointerId); } catch (err) {}
+        e.preventDefault();
+      });
+
+      cv.addEventListener("pointermove", function (e) {
+        if (dragCell < 0) return;
+        // 显示像素的位移换算回画布像素。
+        // 必须在 seed（该格已保存的位移）之上累加，
+        // 否则缩放/上次拖动留下的位置会在按下瞬间被清零，图片「跳回去」。
+        var r = cv.getBoundingClientRect();
+        var kx = cellCv.width / r.width;
+        var ky = cellCv.height / r.height;
+        dragOff.x = seed.x + (e.clientX - startX) * kx;
+        dragOff.y = seed.y + (e.clientY - startY) * ky;
+        scheduleRender();
+        e.preventDefault();
+      });
+
+      ["pointerup", "pointercancel"].forEach(function (ev) {
+        cv.addEventListener(ev, function (e) {
+          if (dragCell < 0) return;
+          // 先把最终位移落到该格子上再清理，
+          // 否则合并渲染还没执行就会丢掉最后一次的位置
+          if (dragOff && ev === "pointerup") offsets[dragCell] = { x: dragOff.x, y: dragOff.y };
+          dragCell = -1;
+          dragOff = null;
+          document.body.classList.remove("dragging-preview");
+          cv.classList.remove("dragging");
+          try { cv.releasePointerCapture(e.pointerId); } catch (err) {}
+          scheduleRender();
+        });
+      });
+
+      /* 滚轮缩放：直接作用于鼠标所在的格子。
+         以光标位置为锚点缩放，缩放后图片仍盖住光标处的那一点，
+         符合「对着哪里滚就放大哪里」的直觉。 */
+      cv.addEventListener("wheel", function (e) {
+        if (dragCell >= 0) return;
+        var i = hitTest(e.clientX, e.clientY);
+        if (i < 0) return;
+        selectCell(i);
+
+        var r = cv.getBoundingClientRect();
+        var px = (e.clientX - r.left) / r.width * cellCv.width;
+        var py = (e.clientY - r.top) / r.height * cellCv.height;
+        var rects = cellRects(cellCv.width, cellCv.height);
+        var rect = rects[i];
+        if (!rect) return;
+
+        var oldZ = zoomOf(i);
+        // deltaY 向下为正；向上滚（放大）取负号
+        var factor = Math.exp(-e.deltaY * 0.0015);
+        var newZ = clamp(oldZ * factor, 1, ZOOM_MAX);
+        if (Math.abs(newZ - oldZ) < 1e-4) return;
+
+        // 光标相对格子内的位置（0..1），缩放前后保持不变
+        var fx = rect.w > 0 ? (px - rect.x) / rect.w : 0.5;
+        var fy = rect.h > 0 ? (py - rect.y) / rect.h : 0.5;
+
+        zooms[i] = newZ;
+
+        // 由锚点反解位移：要求缩放后该点在格子内的相对位置不变。
+        // 绘制位置 = fit.ox + dx，锚点像素 = rect + fx*rect.w
+        // 令 fit.ox + dx = fx*rect.w - fx*fit.w 即可解出 dx。
+        var it = images[i];
+        if (it) {
+          var fitNew = fitCell(it.img, rect, newZ);
+          offsets[i] = {
+            x: fx * rect.w - fx * fitNew.w - fitNew.ox,
+            y: fy * rect.h - fy * fitNew.h - fitNew.oy
+          };
+        }
+
+        scheduleRender();
+        syncZoomBar();
+        e.preventDefault();
+      }, { passive: false });
+
+      /* 双击复位该格 */
+      cv.addEventListener("dblclick", function (e) {
+        var i = hitTest(e.clientX, e.clientY);
+        if (i < 0) return;
+        selectCell(i);
+        resetCell(i);
+        e.preventDefault();
+      });
+
+      /* 悬停即选中，缩放条始终对应当前指向的格子 */
+      cv.addEventListener("pointermove", function (e) {
+        if (dragCell >= 0) return;
+        var i = hitTest(e.clientX, e.clientY);
+        if (i >= 0 && i !== selCell) selectCell(i);
+      });
+    }
+
+    /* ============================================================
+       图片列表
+       ============================================================ */
+    function renderList() {
+      list.innerHTML = "";
+      listCount.textContent = String(images.length);
+
+      if (!images.length) {
+        var empty = document.createElement("div");
+        empty.className = "empty";
+        empty.textContent = "还没有图片，点上方区域添加。";
+        list.appendChild(empty);
+        return;
+      }
+
+      images.forEach(function (it, i) {
+        var row = document.createElement("div");
+        row.className = "item";
+
+        var idx = document.createElement("span");
+        idx.className = "idx";
+        idx.textContent = String(i + 1);
+
+        var img = document.createElement("img");
+        img.className = "thumb";
+        img.src = it.url;
+        img.alt = it.name;
+
+        var info = document.createElement("div");
+        info.className = "info";
+        var nm = document.createElement("div");
+        nm.className = "name";
+        nm.textContent = it.name;
+        var meta = document.createElement("div");
+        meta.className = "meta";
+        meta.textContent = it.w + " × " + it.h;
+        info.appendChild(nm);
+        info.appendChild(meta);
+
+        var ops = document.createElement("div");
+        ops.className = "ops";
+
+        function opBtn(label, title, fn) {
+          var b = document.createElement("button");
+          b.type = "button";
+          b.textContent = label;
+          b.title = title;
+          b.addEventListener("click", fn);
+          return b;
+        }
+
+        var up = opBtn("↑", "上移", function () { move(i, -1); });
+        var down = opBtn("↓", "下移", function () { move(i, 1); });
+        var del = opBtn("×", "移除", function () { removeAt(i); });
+        if (i === 0) up.disabled = true;
+        if (i === images.length - 1) down.disabled = true;
+
+        ops.appendChild(up);
+        ops.appendChild(down);
+        ops.appendChild(del);
+
+        row.appendChild(idx);
+        row.appendChild(img);
+        row.appendChild(info);
+        row.appendChild(ops);
+        list.appendChild(row);
+      });
+    }
+
+    function move(i, dir) {
+      var j = i + dir;
+      if (j < 0 || j >= images.length) return;
+      var t = images[i];
+      images[i] = images[j];
+      images[j] = t;
+      renderList();
+      scheduleRender();
+    }
+
+    function removeAt(i) {
+      if (images[i] && images[i].url) URL.revokeObjectURL(images[i].url);
+      images.splice(i, 1);
+      offsets.splice(i, 1);
+      zooms.splice(i, 1);
+      if (selCell >= images.length) selCell = images.length - 1;
+      renderList();
+      syncZoomBar();
+      scheduleRender();
+      syncTemplateState();
+    }
+
+    /* ============================================================
+       模板 / 比例状态
+       ============================================================ */
+    /* 模板是否可用：没图时全部可用；
+       有图时只有张数正好对得上的可用。 */
+    function templateUsable(i, count) {
+      return count === 0 || TEMPLATES[i].need === count;
+    }
+
+    function syncTemplateState() {
+      var count = images.length;
+      var need = curTpl >= 0 ? TEMPLATES[curTpl].need : -1;
+
+      var needSet = {};
+      TEMPLATES.forEach(function (t) { needSet[t.need] = true; });
+
+      templateItems.forEach(function (el, i) {
+        var usable = templateUsable(i, count);
+        el.classList.toggle("active", i === curTpl);
+        el.classList.toggle("fit", !!count && usable);
+        // 不可用的模板直接禁用：置灰 + 移出点击热区 + 标注原因
+        el.classList.toggle("unusable", !usable);
+        el.setAttribute("aria-disabled", usable ? "false" : "true");
+        el.title = usable
+          ? (TEMPLATES[i].name + " · 需要 " + TEMPLATES[i].need + " 张")
+          : ("「" + TEMPLATES[i].name + "」需要 " + TEMPLATES[i].need +
+             " 张，当前已添加 " + count + " 张，不可用");
+      });
+
+      if (!count) {
+        exportBtn.disabled = true;
+        setStatus("还没有添加图片，请先选择比例和模板。");
+        return;
+      }
+
+      if (!needSet[count]) {
+        exportBtn.disabled = true;
+        var supported = Object.keys(needSet).sort(function (a, b) { return a - b; });
+        setStatus("已添加 " + count + " 张，但没有支持该张数的模板（仅支持 " +
+                  supported.join(" / ") + " 张），所有模板已禁用。", "error");
+        return;
+      }
+
+      if (need < 0) {
+        exportBtn.disabled = true;
+        // 张数还没凑齐就先点了模板：明确告诉他已经记下了
+        if (pendingTpl >= 0 && loading) {
+          setStatus("已记住你选的「" + TEMPLATES[pendingTpl].name + "」模板，" +
+                    "正在等待图片读取完成…", "");
+        } else {
+          setStatus("已添加 " + count + " 张，请在左栏选择一个需要 " + count +
+                    " 张的模板（已为你标出）。", "");
+        }
+        return;
+      }
+
+      if (count !== need) {
+        exportBtn.disabled = true;
+        var fitIdx = -1;
+        for (var i = 0; i < TEMPLATES.length; i++) {
+          if (TEMPLATES[i].need === count) { fitIdx = i; break; }
+        }
+        setStatus("已添加 " + count + " 张，当前模板「" + TEMPLATES[curTpl].name +
+                  "」需要 " + need + " 张，该模板已不可用。" +
+                  (fitIdx >= 0 ? "请选「" + TEMPLATES[fitIdx].name + "」。" : ""),
+                  "error");
+        return;
+      }
+
+      exportBtn.disabled = false;
+      setStatus("已就绪：" + TEMPLATES[curTpl].name + " · " + count +
+                " 张，可拖动画面调整每张图的位置。", "ok");
+    }
+
+    /* ============================================================
+       导出
+       ============================================================ */
+    function download() {
+      if (exportBtn.disabled) return;
+
+      var size = outputSize();
+      var w = size.w, h = size.h;
+      var long = Math.max(w, h);
+      if (long > MAX_EDGE) {
+        var k = MAX_EDGE / long;
+        w = Math.max(1, Math.round(w * k));
+        h = Math.max(1, Math.round(h * k));
+      }
+
+      setStatus("正在生成…");
+      setTimeout(function () {
+        var cv = document.createElement("canvas");
+        cv.width = w;
+        cv.height = h;
+        var ctx = cv.getContext("2d");
+        compose(ctx, w, h);   // compose 内部已铺底色
+
+        cv.toBlob(function (blob) {
+          if (!blob) { setStatus("导出失败", "error"); return; }
+          var url = URL.createObjectURL(blob);
+          var a = document.createElement("a");
+          a.href = url;
+          a.download = "collage-" + w + "x" + h + ".png";
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
+          setStatus("已导出 " + a.download, "ok");
+        }, "image/png");
+      }, 30);
+    }
+
+    /* ============================================================
+       载入
+       ============================================================ */
+    function loadFiles(files) {
+      var arr = Array.prototype.slice.call(files).filter(function (f) {
+        return f && f.type.indexOf("image/") === 0;
+      });
+      if (!arr.length) return;
+
+      setStatus("正在读取 " + arr.length + " 张图片…");
+      var pending = arr.length;
+      var failed = 0;
+      loading = true;
+
+      arr.forEach(function (file) {
+        var url = URL.createObjectURL(file);
+        var img = new Image();
+        img.onload = function () {
+          images.push({ name: file.name || "图片", w: img.naturalWidth, h: img.naturalHeight, img: img, url: url });
+          if (--pending === 0) done(failed);
+        };
+        img.onerror = function () {
+          URL.revokeObjectURL(url);
+          failed++;
+          if (--pending === 0) done(failed);
+        };
+        img.src = url;
+      });
+
+      function done(f) {
+        loading = false;
+        renderList();
+
+        // 图片读完后，兑现加载期间记下的模板选择
+        if (pendingTpl >= 0 && templateUsable(pendingTpl, images.length)) {
+          selectTemplate(pendingTpl);
+          if (f) setStatus("有 " + f + " 张图片读取失败，已跳过。", "error");
+          return;
+        }
+        if (pendingTpl >= 0) pendingTpl = -1;   // 张数仍对不上，放弃这次意图
+
+        syncTemplateState();
+        scheduleRender();
+        if (f) setStatus("有 " + f + " 张图片读取失败，已跳过。", "error");
+      }
+    }
+
+    /* ============================================================
+       事件
+       ============================================================ */
+
+    // 模板角标：标出该模板需要几张
+    templateItems.forEach(function (el, i) {
+      var cnt = document.createElement("span");
+      cnt.className = "cnt";
+      cnt.textContent = String(TEMPLATES[i].need);
+      el.appendChild(cnt);
+      el.title = TEMPLATES[i].name + " · 需要 " + TEMPLATES[i].need + " 张";
+    });
+
+    ratioItems.forEach(function (item, i) {
+      item.title = RATIOS[i].label;
+      item.addEventListener("click", function () {
+        curRatio = i;
+        ratioItems.forEach(function (el, j) { el.classList.toggle("active", j === i); });
+        scheduleRender();
+      });
+    });
+
+    /* 选中模板。不可用时把意图记下来，等图片加载完再兑现 ——
+       否则「图片还在读，用户就点了模板」这种常见操作会被静默丢弃，
+       图读完后仍停在「请选择一个模板」，看起来像是点了没反应。 */
+    function selectTemplate(i) {
+      if (!templateUsable(i, images.length)) {
+        pendingTpl = i;
+        setStatus("「" + TEMPLATES[i].name + "」需要 " + TEMPLATES[i].need +
+                  " 张，当前已添加 " + images.length + " 张，正在等待图片…" +
+                  (loading ? "（仍在读取）" : "，请先调整图片数量。"), "error");
+        return;
+      }
+      pendingTpl = -1;
+      curTpl = i;
+      dragCell = -1;
+      dragOff = null;
+      offsets = [];        // 格子形状变了，之前的位移/缩放不再适用
+      zooms = [];
+      selCell = -1;
+      syncZoomBar();
+      syncTemplateState();
+      scheduleRender();
+    }
+
+    templateItems.forEach(function (item, i) {
+      item.addEventListener("click", function () { selectTemplate(i); });
+    });
+
+    zoomRange.addEventListener("input", function () {
+      setZoom(selCell, parseFloat(zoomRange.value));
+    });
+
+    zoomInBtn.addEventListener("click", function () {
+      setZoom(selCell, zoomOf(selCell) * 1.25);
+    });
+
+    zoomOutBtn.addEventListener("click", function () {
+      setZoom(selCell, zoomOf(selCell) / 1.25);
+    });
+
+    zoomResetBtn.addEventListener("click", function () {
+      resetCell(selCell);
+    });
+
+    gapRange.addEventListener("input", function () {
+      GAP = clampInt(gapRange.value, 0, 40);
+      gapVal.textContent = GAP > 0 ? GAP + " px" : "无";
+      // 间距改动会改变格子尺寸和可拖动范围，需要清掉已保存的位移；
+      // 缩放倍数是相对「铺满」的倍率，与间距无关，予以保留。
+      offsets = [];
+      scheduleRender();
+    });
+
+    bgColorIn.addEventListener("input", function () {
+      BG_COLOR = bgColorIn.value;
+      bgVal.textContent = BG_COLOR.toUpperCase();
+      scheduleRender();
+    });
+
+    drop.addEventListener("click", function () { fileInput.click(); });
+    fileInput.addEventListener("change", function (e) {
+      if (e.target.files && e.target.files.length) loadFiles(e.target.files);
+      fileInput.value = "";
+    });
+
+    ["dragenter", "dragover"].forEach(function (ev) {
+      drop.addEventListener(ev, function (e) {
+        e.preventDefault();
+        drop.classList.add("dragover");
+      });
+    });
+    ["dragleave", "drop"].forEach(function (ev) {
+      drop.addEventListener(ev, function () { drop.classList.remove("dragover"); });
+    });
+    drop.addEventListener("drop", function (e) {
+      e.preventDefault();
+      if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) {
+        loadFiles(e.dataTransfer.files);
+      }
+    });
+
+    document.addEventListener("paste", function (e) {
+      if (!e.clipboardData || !e.clipboardData.items) return;
+      for (var i = 0; i < e.clipboardData.items.length; i++) {
+        if (e.clipboardData.items[i].type.indexOf("image/") === 0) {
+          var f = e.clipboardData.items[i].getAsFile();
+          if (f) { loadFiles([f]); e.preventDefault(); }
+          break;
+        }
+      }
+    });
+
+    clearBtn.addEventListener("click", function () {
+      revokeAll();
+      renderList();
+      syncTemplateState();
+      scheduleRender();
+    });
+
+    exportBtn.addEventListener("click", download);
+
+    var resizeTimer = null;
+    window.addEventListener("resize", function () {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(scheduleRender, 150);
+    });
+
+    /* ============================================================
+       初始化
+       ============================================================ */
+    renderList();
+    syncTemplateState();
+    syncZoomBar();
+    gapVal.textContent = GAP > 0 ? GAP + " px" : "无";
+    bgVal.textContent = BG_COLOR.toUpperCase();
+
+  })();
+  </script>
+</body>
+</html>
