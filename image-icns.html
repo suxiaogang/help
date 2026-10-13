@@ -116,24 +116,24 @@
     /* ---------- 左列：上传 ---------- */
     .drop {
       flex: 0 0 auto;
-      margin: 12px 14px;
+      margin: 7px 14px;
       border: 2px dashed var(--border);
       border-radius: var(--radius);
-      padding: 14px;
+      padding: 8px 14px;
       text-align: center;
       cursor: pointer;
       transition: border-color .2s, background-color .2s;
     }
     .drop:hover, .drop.dragover { border-color: var(--accent); background: rgba(61, 214, 140, .06); }
     .drop .inner { display: flex; align-items: center; gap: 10px; text-align: left; }
-    .drop .icon { font-size: 22px; line-height: 1; flex: 0 0 auto; }
-    .drop .text { color: var(--muted); font-size: 11.5px; line-height: 1.45; }
+    .drop .icon { font-size: 19px; line-height: 1; flex: 0 0 auto; }
+    .drop .text { color: var(--muted); font-size: 11px; line-height: 1.35; }
     .drop .text b { color: var(--text); }
     .drop input[type="file"] { display: none; }
 
     /* ---------- 面板区块 ---------- */
-    .panel { padding: 0 14px 14px; }
-    .group + .group { margin-top: 14px; }
+    .panel { padding: 0 14px 8px; }
+    .group + .group { margin-top: 6px; }
     .group-title {
       display: flex;
       align-items: center;
@@ -143,7 +143,7 @@
       font-weight: 600;
       color: var(--muted);
       letter-spacing: .4px;
-      margin-bottom: 8px;
+      margin-bottom: 6px;
     }
     .group-title .tools { display: flex; gap: 5px; }
 
@@ -154,7 +154,7 @@
       flex-direction: column;
       align-items: center;
       gap: 6px;
-      padding: 9px 4px;
+      padding: 7px 3px;
       border: 1px solid var(--border);
       border-radius: 9px;
       background: var(--panel-2);
@@ -204,9 +204,67 @@
       font-size: 11px;
       color: var(--text);
     }
+    /* 分段按钮组（玻璃质感等档位选择） */
+    .seg {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+    }
+    .seg button { padding: 5px 4px; font-size: 11.5px; }
+    .seg button.on {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #062315;
+      font-weight: 600;
+    }
 
-    /* 尺寸清单 */
+    /* 背景色板 */
+    .color-row {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      margin-top: 5px;
+      flex-wrap: wrap;
+    }
+    .color-row .sw2 {
+      width: 19px; height: 19px;
+      padding: 0;
+      border-radius: 5px;
+      border: 1px solid rgba(255, 255, 255, .18);
+      cursor: pointer;
+      transition: transform .12s, box-shadow .12s;
+    }
+    .color-row .sw2:hover { transform: scale(1.12); }
+    .color-row .sw2.on {
+      box-shadow: 0 0 0 2px var(--panel), 0 0 0 3.5px var(--accent);
+    }
+    .color-row input[type="color"] {
+      width: 21px; height: 21px;
+      padding: 0;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      background: none;
+      cursor: pointer;
+      flex: 0 0 auto;
+    }
+    .color-row.hidden { display: none; }
+
+    /* 参数下方的补充说明 */
+    .hint-line {
+      margin-top: 5px;
+      font-size: 10.5px;
+      line-height: 1.4;
+      color: var(--muted);
+    }
+    .hint-line b { color: var(--text); font-weight: 600; }
+    .hint-line.ok { color: var(--accent); }
+
+    /* 尺寸清单：两列排布，省出约 100px 纵向空间 */
     .sizes {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1px;
+      background: var(--border);
       border: 1px solid var(--border);
       border-radius: 9px;
       overflow: hidden;
@@ -214,25 +272,23 @@
     .size {
       display: flex;
       align-items: center;
-      gap: 10px;
-      padding: 8px 11px;
+      gap: 7px;
+      padding: 3px 9px;
+      background: var(--panel);
       cursor: pointer;
-      border-bottom: 1px solid var(--border);
       transition: background .12s;
       user-select: none;
     }
-    .size:last-child { border-bottom: none; }
     .size:hover { background: var(--panel-2); }
-    .size input { accent-color: var(--accent); width: 14px; height: 14px; margin: 0; flex: 0 0 auto; cursor: pointer; }
+    .size input { accent-color: var(--accent); width: 13px; height: 13px; margin: 0; flex: 0 0 auto; cursor: pointer; }
     .size .tag {
       font-family: var(--mono);
-      font-size: 11.5px;
+      font-size: 11px;
       color: var(--accent);
-      flex: 0 0 42px;
+      flex: 0 0 auto;
     }
-    .size .dim { font-size: 12px; color: var(--text); flex: 0 0 auto; }
-    .size .note { font-size: 11px; color: var(--muted); margin-left: auto; text-align: right; }
-    .size.retina .tag { color: #c99bff; }
+    .size .dim { font-size: 11px; color: var(--muted); margin-left: auto; white-space: nowrap; }
+    .size.retina .tag { color: var(--accent); }
 
     /* 导出区 */
     .export-box { display: flex; flex-direction: column; gap: 8px; }
@@ -240,9 +296,9 @@
 
     .facts {
       font-family: var(--mono);
-      font-size: 11px;
+      font-size: 10.5px;
       color: var(--muted);
-      line-height: 1.6;
+      line-height: 1.45;
     }
     .facts b { color: var(--text); font-weight: 600; }
 
@@ -268,8 +324,9 @@
     .empty .big { font-size: 38px; line-height: 1; opacity: .5; }
 
     .swatches {
+      /* 248(预览窗口) + 20(卡片内边距) + 余量 */
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(268px, 1fr));
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
       gap: 12px;
     }
     .sw {
@@ -295,25 +352,26 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      /* 固定高度：各尺寸显示大小差异很大，若让卡片随最高者拉伸，
-         32×32 那种小图会留出大片空白。统一高度后所有卡片对齐。 */
-      height: 260px;
-      width: 100%;
+      /* 预览窗口本身就是「图像边界」，不加内边距。
+         若这里留一圈边距，小尺寸图标看起来就像已经加了四周留白。 */
+      width: 248px;
+      height: 248px;
+      padding: 0;
+      overflow: hidden;
     }
-    /* 固定尺寸的正方形舞台：canvas 位图尺寸各不相同，
-       若直接按像素摆放大图会溢出卡片、压到相邻卡片上。
-       正方形舞台 + 正方形位图，max-* 收敛时两边同时收缩，不会变形。 */
+    /* 舞台 = 图像边界 = 棋盘格范围。
+       1× 时位图正好铺满整个舞台，所见即导出结果；
+       放大时靠滚动查看，且不会把图像边界顶出卡片。 */
     .sw .stage {
-      width: 240px;
-      height: 240px;
+      width: 100%;
+      height: 100%;
       display: flex;
-      align-items: center;
-      justify-content: center;
+      overflow: auto;
     }
     .sw canvas {
       display: block;
-      max-width: 100%;
-      max-height: 100%;
+      flex: 0 0 auto;
+      margin: auto;   /* 居中；放大溢出时也不会裁掉左上角 */
       border-radius: 2px;
     }
     .sw .cap {
@@ -322,7 +380,7 @@
       color: var(--accent);
       text-align: center;
     }
-    .sw.retina .cap { color: #c99bff; }
+    .sw.retina .cap { color: var(--accent); }
     .sw .cap2 { font-size: 10.5px; color: var(--muted); text-align: center; margin-top: -4px; }
 
     /* 结构校验 */
@@ -403,19 +461,49 @@
             <div class="shapes" id="shapes"></div>
           </div>
 
+          <!-- 背景 -->
+          <div class="group">
+            <div class="group-title"><span>背景</span></div>
+            <div class="seg" id="bgSeg">
+              <button type="button" data-bg="0" class="on">无</button>
+              <button type="button" data-bg="1">纯色</button>
+              <button type="button" data-bg="2">渐变</button>
+            </div>
+            <div class="color-row" id="bgColors"></div>
+            <div class="hint-line" id="bgHint"></div>
+          </div>
+
           <!-- 四周留白 -->
           <div class="group">
-            <div class="group-title"><span>四周留白</span></div>
-            <div class="slider-row">
-              <input type="range" id="padRange" min="0" max="25" step="1" value="0" />
-              <span class="slider-val" id="padVal">0%</span>
+            <div class="group-title">
+              <span>四周留白</span>
+              <span class="tools">
+                <button type="button" class="mini" id="padStd"
+                        title="恢复成 macOS 标准图标网格：每边留白 10%">macOS 标准</button>
+              </span>
             </div>
+            <div class="slider-row">
+              <input type="range" id="padRange" min="0" max="25" step="1" value="10" />
+              <span class="slider-val" id="padVal">10%</span>
+            </div>
+            <div class="hint-line" id="padHint"></div>
+          </div>
+
+          <!-- 玻璃质感 -->
+          <div class="group">
+            <div class="group-title"><span>玻璃质感</span></div>
+            <div class="seg" id="glassSeg">
+              <button type="button" data-glass="0" class="on">关闭</button>
+              <button type="button" data-glass="1">柔和</button>
+              <button type="button" data-glass="2">明显</button>
+            </div>
+            <div class="hint-line" id="glassHint"></div>
           </div>
 
           <!-- 包含尺寸 -->
           <div class="group">
             <div class="group-title">
-              <span>包含尺寸</span>
+              <span>包含尺寸<small style="color:var(--muted);font-weight:400;margin-left:5px">悬停看用途</small></span>
               <span class="tools">
                 <button type="button" class="mini" id="presetAll">全选</button>
                 <button type="button" class="mini" id="presetNone">清空</button>
@@ -428,7 +516,7 @@
           <div class="group">
             <div class="group-title"><span>导出</span></div>
             <div class="export-box">
-              <button type="button" class="primary" id="exportBtn" disabled>生成并下载 .icns</button>
+              <button type="button" class="primary" id="exportBtn" disabled title="无论勾选多少尺寸，都只会下载 1 个 .icns 文件（多尺寸打包在同一个文件内）">生成并下载 .icns</button>
               <div class="facts" id="facts">尚未选择图片</div>
             </div>
           </div>
@@ -512,7 +600,13 @@
     { key: "circle",   label: "圆形" }
   ];
 
-  var MAX_DISPLAY = 240;   // 预览舞台边长，与 .sw .stage 的尺寸一致
+  var STAGE = 248;        // 预览窗口边长，须与 .sw .frame 的 CSS 尺寸一致
+
+  /* macOS 标准图标网格：
+     实测本机 21 个系统应用图标，主体（不含投影）每边留白中位数 9.8%，
+     内容边长 80.5%——换算到 1024 画布正是留白 100px / 内容 824px，
+     与 Apple AppIcon 规范一致。滑块取整后取 10%。 */
+  var PAD_STD = 10;
   var SVG_NS = "http://www.w3.org/2000/svg";
 
   // ---- DOM ----
@@ -522,6 +616,7 @@
   var sizeListEl = document.getElementById("sizeList");
   var padRange   = document.getElementById("padRange");
   var padVal     = document.getElementById("padVal");
+  var padHint    = document.getElementById("padHint");
   var exportBtn  = document.getElementById("exportBtn");
   var factsEl    = document.getElementById("facts");
   var swatchesEl = document.getElementById("swatches");
@@ -536,7 +631,10 @@
   var sourceImg = null;      // 原图
   var sourceName = "icon";   // 输出文件名（不含扩展名）
   var shape = "none";
-  var padPct = 0;
+  var bgMode = 0;         // 0 无 / 1 纯色 / 2 渐变
+  var bgColor = "#0a84ff";
+  var glass = 0;          // 0 关闭 / 1 柔和 / 2 明显
+  var padPct = PAD_STD;   // 默认即 macOS 标准网格
   var zoom = 1;
   var picked = {};           // type -> bool
   var lastBytes = null;      // 最近一次生成的 icns
@@ -550,45 +648,117 @@
      ========================================================= */
 
   // macOS 图标用的是「超椭圆」而非普通圆角矩形，n≈5 时最接近系统观感
-  function squirclePath(ctx, size) {
+  // (x, y) 为内容框左上角，size 为边长——形状必须贴合内容框，
+  // 若按整张画布裁切，留白 >0 时图片会被缩到框内、四角原样保留，
+  // 看起来就是圆角失效。
+  function squirclePath(ctx, x, y, size) {
     var c = size / 2, a = size / 2, n = 5, steps = 256;
+    var ox = x + c, oy = y + c;
     ctx.beginPath();
     for (var i = 0; i <= steps; i++) {
       var t = (i / steps) * Math.PI * 2;
       var ct = Math.cos(t), st = Math.sin(t);
-      var x = c + a * Math.sign(ct) * Math.pow(Math.abs(ct), 2 / n);
-      var y = c + a * Math.sign(st) * Math.pow(Math.abs(st), 2 / n);
-      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      var px = ox + a * Math.sign(ct) * Math.pow(Math.abs(ct), 2 / n);
+      var py = oy + a * Math.sign(st) * Math.pow(Math.abs(st), 2 / n);
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
     }
     ctx.closePath();
   }
 
-  function shapePath(ctx, size) {
-    var c = size / 2;
+  function shapePath(ctx, x, y, size) {
     if (shape === "circle") {
       ctx.beginPath();
-      ctx.arc(c, c, c, 0, Math.PI * 2);
+      ctx.arc(x + size / 2, y + size / 2, size / 2, 0, Math.PI * 2);
     } else if (shape === "round") {
       var r = size * 0.2;
       ctx.beginPath();
       if (ctx.roundRect) {
-        ctx.roundRect(0, 0, size, size, r);
+        ctx.roundRect(x, y, size, size, r);
       } else {
-        ctx.moveTo(r, 0);
-        ctx.arcTo(size, 0, size, size, r);
-        ctx.arcTo(size, size, 0, size, r);
-        ctx.arcTo(0, size, 0, 0, r);
-        ctx.arcTo(0, 0, size, 0, r);
+        ctx.moveTo(x + r, y);
+        ctx.arcTo(x + size, y, x + size, y + size, r);
+        ctx.arcTo(x + size, y + size, x, y + size, r);
+        ctx.arcTo(x, y + size, x, y, r);
+        ctx.arcTo(x, y, x + size, y, r);
         ctx.closePath();
       }
     } else {
-      squirclePath(ctx, size);
+      squirclePath(ctx, x, y, size);
     }
   }
 
   /* =========================================================
      渲染：预览与导出共用同一个函数，保证两者完全一致
      ========================================================= */
+  function drawSource(ctx, ox, box) {
+    // 等比缩放并居中，保证整幅图都在框内、不裁切
+    var k = Math.min(box / sourceImg.width, box / sourceImg.height);
+    var w = Math.max(1, Math.round(sourceImg.width * k));
+    var h = Math.max(1, Math.round(sourceImg.height * k));
+    ctx.drawImage(sourceImg, Math.round(ox + (box - w) / 2), Math.round(ox + (box - h) / 2), w, h);
+  }
+
+  /* =========================================================
+     背景：给透明 PNG 垫一层底色
+     ------------------------------------------------------------
+     铺满整个画布并随形状一起裁切，所以「圆角 + 背景」得到的是
+     标准 macOS 应用图标外观：色块铺满 + 图标居中 + 四周透明留边。
+     渐变由主色自动派生（顶端提亮、底端压暗），
+     避免让用户去配两组容易打架的颜色。
+     ========================================================= */
+  var PALETTE = [
+    ["#0a84ff", "系统蓝"], ["#5e5ce6", "靛蓝"],   ["#bf5af2", "紫"],
+    ["#ff375f", "粉红"],   ["#ff453a", "红"],     ["#ff9f0a", "橙"],
+    ["#ffd60a", "黄"],     ["#30d158", "绿"],     ["#40c8e0", "青"],
+    ["#8e8e93", "灰"],     ["#1c1c1e", "近黑"],   ["#ffffff", "白"]
+  ];
+
+  function hexToRgb(hex) {
+    var h = hex.replace("#", "");
+    if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+    var n = parseInt(h, 16);
+    return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+  }
+  function shade(hex, amt) {
+    var c = hexToRgb(hex);
+    var f = amt < 0 ? 0 : 255;
+    var t = amt < 0 ? -amt : amt;
+    var m = function (v) {
+      return Math.round(amt < 0 ? v + (f - v) * t : v + (f - v) * t);
+    };
+    var to2 = function (v) { return ("0" + Math.max(0, Math.min(255, v)).toString(16)).slice(-2); };
+    return "#" + to2(m(c.r)) + to2(m(c.g)) + to2(m(c.b));
+  }
+
+  function drawBackground(ctx, size) {
+    if (bgMode === 0) return;
+    if (bgMode === 1) {
+      ctx.fillStyle = bgColor;
+    } else {
+      // 温和的线性渐变：顶亮底暗，不做彩虹色
+      var g = ctx.createLinearGradient(0, 0, 0, size);
+      g.addColorStop(0, shade(bgColor, 0.16));
+      g.addColorStop(1, shade(bgColor, -0.10));
+      ctx.fillStyle = g;
+    }
+    ctx.fillRect(0, 0, size, size);
+  }
+
+  // 源图是否含透明像素
+  function sourceHasAlpha() {
+    if (!sourceImg) return false;
+    try {
+      var s = 24;
+      var cv = document.createElement("canvas");
+      cv.width = cv.height = s;
+      var c = cv.getContext("2d");
+      c.drawImage(sourceImg, 0, 0, s, s);
+      var d = c.getImageData(0, 0, s, s).data;
+      for (var i = 3; i < d.length; i += 4) if (d[i] < 250) return true;
+    } catch (e) { /* 读不到就当作不透明 */ }
+    return false;
+  }
+
   function renderIcon(size) {
     var cv = document.createElement("canvas");
     cv.width = size;
@@ -597,20 +767,160 @@
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = "high";
 
-    if (shape !== "none") {
-      shapePath(ctx, size);
-      ctx.clip();
-    }
-
     var pad = Math.round(size * padPct / 100);
     var box = Math.max(1, size - pad * 2);
-    // 等比缩放并居中，保证整幅图都在框内、不裁切
-    var k = Math.min(box / sourceImg.width, box / sourceImg.height);
-    var w = Math.max(1, Math.round(sourceImg.width * k));
-    var h = Math.max(1, Math.round(sourceImg.height * k));
-    ctx.drawImage(sourceImg, Math.round(pad + (box - w) / 2), Math.round(pad + (box - h) / 2), w, h);
 
+    if (glass > 0) {
+      renderGlass(ctx, box, pad);
+      return cv;
+    }
+
+    // 形状裁切贴合「内容框」，留白只是把内容框整体缩小
+    if (shape !== "none") {
+      shapePath(ctx, pad, pad, box);
+      ctx.clip();
+    }
+    drawBackground(ctx, size);      // 铺满画布（已被形状裁切）
+    drawSource(ctx, pad, box);
     return cv;
+  }
+
+  /* =========================================================
+     Liquid Glass 风格玻璃质感
+     ------------------------------------------------------------
+     参考 Apple Liquid Glass（WWDC 2025，macOS Tahoe / iOS 26）：
+     半透明 + 真实高斯模糊 + 左上角高光 + 倒角边缘 + 轻微色散。
+     静态 icns 无法做实时折射，这里把光学特征烘焙进 PNG。
+     ========================================================= */
+  /* 玻璃质感参数。
+     核心约束（连续几轮真实图标反馈换来的）：
+     「边框要看得见」和「不能改变图片颜色」本质冲突——
+     浅色图标上画白边等于没画，而铺一层黑色半透明又会把白色压暗。
+     因此这里的原则是：
+       1) 绝不做铺满面板的加色/减色，那是最容易被察觉的「改色」；
+       2) 边框颜色随底图明暗自适应（见 adaptRim）；
+       3) 边框只画在轮廓内侧的窄窄一圈，尽量远离图像主体；
+       4) 不做色散——它会在彩色边缘留下假彩边，等同于改色。 */
+  var GLASS = [
+    null,
+    { glowW: 0.012, glowBlur: 0.045, glTop: 0.38, glBot: 0.20, shTop: 0.24, shBot: 0.13 },
+    { glowW: 0.018, glowBlur: 0.080, glTop: 0.62, glBot: 0.34, shTop: 0.40, shBot: 0.21 }
+  ];
+
+  // 采样内容框的平均亮度，判断该用亮边还是暗边
+  function plateLuma(pc, box) {
+    var step = Math.max(1, Math.round(box / 24));
+    var d = pc.getImageData(0, 0, box, box).data;
+    var sum = 0, n = 0;
+    for (var y = 0; y < box; y += step) {
+      for (var x = 0; x < box; x += step) {
+        var i = (y * box + x) * 4;
+        if (d[i + 3] < 128) continue;
+        sum += 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+        n++;
+      }
+    }
+    return n ? sum / n / 255 : 0.5;
+  }
+
+  var SUPPORTS_FILTER = (function () {
+    try {
+      var c = document.createElement("canvas").getContext("2d");
+      c.filter = "blur(2px)";
+      return c.filter === "blur(2px)";
+    } catch (e) { return false; }
+  })();
+
+  function mkCanvas(w, h) {
+    var c = document.createElement("canvas");
+    c.width = Math.max(1, Math.round(w));
+    c.height = Math.max(1, Math.round(h));
+    return c;
+  }
+
+  
+
+  function renderGlass(ctx, box, pad) {
+    var P = GLASS[glass];
+    var blurPx = Math.max(0, box * P.blur);
+    var bleed = Math.ceil(blurPx * 3) + 2;   // 向外多画一圈，避免模糊在边缘吸入透明
+    var S = Math.max(1, Math.round(box + bleed * 2));
+
+    // --- 1) 底图：清晰版为主，模糊只做一点点 ---
+    var big = mkCanvas(S, S);
+    var bc = big.getContext("2d");
+    drawSource(bc, bleed, box);
+
+    var plate = mkCanvas(box, box);
+    var pc = plate.getContext("2d");
+
+    if (blurPx > 0) {
+      if (SUPPORTS_FILTER) {
+        // 只做 blur，不叠 saturate / brightness——那两项会直接改动颜色
+        var oc = big.getContext("2d");
+        oc.filter = "blur(" + blurPx + "px)";
+        oc.drawImage(big, 0, 0);
+        oc.filter = "none";
+        pc.drawImage(big, bleed, bleed, box, box, 0, 0, box, box);
+      } else {
+        // 兜底：无 ctx.filter 时用「缩小再放大」得到廉价模糊
+        var small = box > 24 ? Math.max(2, Math.round(box / 12)) : Math.max(1, Math.round(box / 4));
+        var tmp = mkCanvas(small, small);
+        var tc = tmp.getContext("2d");
+        tc.imageSmoothingEnabled = true;
+        tc.imageSmoothingQuality = "high";
+        tc.drawImage(big, 0, 0, S, S, 0, 0, small, small);
+        pc.imageSmoothingEnabled = true;
+        pc.imageSmoothingQuality = "high";
+        pc.drawImage(tmp, 0, 0, small, small, 0, 0, box, box);
+      }
+      // 不用径向遮罩：模糊一旦在轮廓边缘达到峰值，图标就会虚焦、
+      // 倒角边框也随之消失。宁可整体均匀地糊一点点。
+    } else {
+      drawSource(pc, 0, box);
+    }
+
+    // 已去掉色散与镜面高光：红蓝通道偏移会在彩色轮廓旁留下假彩边，
+    // 面板铺白光会冲淡浅色图——两者都等同于「改变图片颜色」。
+
+    // --- 2) 贴到主画布并按形状裁切 ---
+    ctx.save();
+    if (shape !== "none") { shapePath(ctx, pad, pad, box); ctx.clip(); }
+    drawBackground(ctx, pad + box * 2);
+    ctx.drawImage(plate, pad, pad);
+    ctx.restore();
+
+    // --- 3) 内边线发光 ---
+    // 实测本机 8 个 Liquid Glass 系统图标：轮廓内侧一圈都是「亮于外侧」的
+    // 发光带（内侧≈246 / 外侧≈61），上下边缘皆然，并不存在右下的暗边。
+    // 所以这里画的是整圈柔光，而不是硬描边：
+    //   · lineWidth 很细，只是一条芯
+    //   · shadowBlur 向内扩散出柔和辉光（裁到形状内，只保留向内的一半）
+    //   · 受光侧强、背光侧弱，但背光侧仍是同一色相，不会变成灰边
+    // 浅色图上亮光不可见，改用同样形态的「内阴影」代替。
+    if (shape !== "none") {
+      var lum = plateLuma(pc, box);
+      var light = lum >= 0.5;
+      var base = light ? "0,0,0" : "255,255,255";
+      var aTop = light ? P.shTop : P.glTop;
+      var aBot = light ? P.shBot : P.glBot;
+      var aMid = (aTop + aBot) / 2;
+
+      ctx.save();
+      shapePath(ctx, pad, pad, box);
+      ctx.clip();                       // 只保留向内的辉光，轮廓本身不被撑大
+      ctx.lineWidth = Math.max(1, box * P.glowW);
+      ctx.lineJoin = "round";
+      var gGlow = ctx.createLinearGradient(pad, pad, pad + box, pad + box);
+      gGlow.addColorStop(0.00, "rgba(" + base + "," + aTop + ")");   // 受光侧
+      gGlow.addColorStop(0.50, "rgba(" + base + "," + aMid.toFixed(3) + ")");
+      gGlow.addColorStop(1.00, "rgba(" + base + "," + aBot + ")");   // 背光侧，仍是同一色
+      ctx.strokeStyle = gGlow;
+      ctx.shadowColor = "rgba(" + base + "," + Math.max(aTop, aBot) + ")";
+      ctx.shadowBlur = box * P.glowBlur;
+      ctx.stroke();
+      ctx.restore();
+    }
   }
 
   function canvasToPngBytes(cv) {
@@ -705,13 +1015,13 @@
                  circle: "圆形（内切）" }[sh.key];
 
     var cv = document.createElement("canvas");
-    cv.width = cv.height = 30;
+    cv.width = cv.height = 24;
     var ctx = cv.getContext("2d");
     var saved = shape;
     shape = sh.key;
     // 只借用 shapePath，不裁切，画个填充块当示意
     var prevPad = padPct; padPct = 0;
-    var filled = drawSample(ctx, 30);
+    var filled = drawSample(ctx, 24);
     padPct = prevPad;
     shape = saved;
     if (filled) el.appendChild(cv);
@@ -725,6 +1035,7 @@
       [].forEach.call(shapesEl.children, function (c) {
         c.classList.toggle("on", c.dataset.key === shape);
       });
+      syncGlassHint();
       scheduleRender();
     });
     shapesEl.appendChild(el);
@@ -739,7 +1050,7 @@
       ctx.fillRect(size * 0.14, size * 0.14, size * 0.72, size * 0.72);
       return true;
     }
-    shapePath(ctx, size);
+    shapePath(ctx, 0, 0, size);
     ctx.fillStyle = "#3dd68c";
     ctx.fill();
     return true;
@@ -766,17 +1077,13 @@
 
     var dim = document.createElement("span");
     dim.className = "dim";
-    dim.textContent = s.px + "×" + s.px;
-
-    var note = document.createElement("span");
-    note.className = "note";
-    note.textContent = s.note;
+    dim.textContent = s.px;
 
     el.appendChild(cb);
     el.appendChild(tag);
     el.appendChild(dim);
-    el.appendChild(note);
-    el.title = s.type + " = " + s.px + "×" + s.px + (s.retina ? "（Retina 槽位）" : "");
+    el.title = s.type + " = " + s.px + "×" + s.px + "（" + s.note + "）"
+            + (s.retina ? " · Retina 槽位" : "");
     sizeListEl.appendChild(el);
   });
 
@@ -802,7 +1109,125 @@
   padRange.addEventListener("input", function () {
     padPct = parseInt(padRange.value, 10) || 0;
     padVal.textContent = padPct + "%";
+    syncPadHint();
     scheduleRender();
+  });
+
+  /* macOS 标准图标网格常量 PAD_STD 定义见文件上方 */
+
+  function syncPadHint() {
+    var on = padPct === PAD_STD;
+    var content = 100 - padPct * 2;
+    padHint.className = "hint-line" + (on ? " ok" : "");
+    padHint.innerHTML = on
+      ? "已按 macOS 标准网格：内容约 <b>" + content + "%</b>（1024 画布上留白 " +
+        Math.round(1024 * padPct / 100) + "px）"
+      : "每边 <b>" + padPct + "%</b>，内容约 <b>" + content + "%</b>（1024 画布上留白 " +
+        Math.round(1024 * padPct / 100) + "px）。图标铺满时在 Finder 里会显得偏大，" +
+        "建议用 <b>macOS 标准</b>。";
+  }
+
+  document.getElementById("padStd").addEventListener("click", function () {
+    padRange.value = PAD_STD;
+    padPct = PAD_STD;
+    padVal.textContent = padPct + "%";
+    syncPadHint();
+    scheduleRender();
+  });
+
+  /* =========================================================
+     背景色
+     ========================================================= */
+  var bgSeg    = document.getElementById("bgSeg");
+  var bgColors = document.getElementById("bgColors");
+  var bgHint   = document.getElementById("bgHint");
+
+  function syncBgHint() {
+    bgColors.classList.toggle("hidden", bgMode === 0);
+    if (bgMode === 0) {
+      bgHint.className = "hint-line";
+      bgHint.innerHTML = "给<b>透明背景</b>的 PNG 垫底色，铺满画布并随形状裁切。";
+      return;
+    }
+    var noAlpha = sourceImg && !sourceHasAlpha();
+    bgHint.className = "hint-line";
+    bgHint.innerHTML = (bgMode === 1
+        ? "纯色铺满 <b>" + bgColor.toUpperCase() + "</b>。"
+        : "渐变由主色自动派生：顶亮底暗，<b>" + bgColor.toUpperCase() + "</b>。")
+      + (noAlpha ? " 当前图片<b>没有透明区域</b>，底色会被完全盖住。" : "");
+  }
+
+  PALETTE.forEach(function (p) {
+    var b = document.createElement("button");
+    b.type = "button";
+    b.className = "sw2";
+    b.style.background = p[0];
+    b.title = p[1] + " " + p[0];
+    b.dataset.color = p[0];
+    b.addEventListener("click", function () {
+      bgColor = p[0];
+      bgPicker.value = p[0];
+      syncBgSwatches();
+      syncBgHint();
+      scheduleRender();
+    });
+    bgColors.appendChild(b);
+  });
+
+  var bgPicker = document.createElement("input");
+  bgPicker.type = "color";
+  bgPicker.value = bgColor;
+  bgPicker.title = "自定义颜色";
+  bgPicker.addEventListener("input", function () {
+    bgColor = bgPicker.value;
+    syncBgSwatches();
+    syncBgHint();
+    scheduleRender();
+  });
+  bgColors.appendChild(bgPicker);
+
+  function syncBgSwatches() {
+    [].forEach.call(bgColors.querySelectorAll(".sw2"), function (b) {
+      b.classList.toggle("on", b.dataset.color.toLowerCase() === bgColor.toLowerCase());
+    });
+  }
+  syncBgSwatches();
+
+  [].forEach.call(bgSeg.querySelectorAll("button"), function (b) {
+    b.addEventListener("click", function () {
+      bgMode = parseInt(b.dataset.bg, 10) || 0;
+      [].forEach.call(bgSeg.children, function (o) { o.classList.toggle("on", o === b); });
+      syncBgHint();
+      scheduleRender();
+    });
+  });
+
+  /* =========================================================
+     玻璃质感档位
+     ========================================================= */
+  var glassSeg  = document.getElementById("glassSeg");
+  var glassHint = document.getElementById("glassHint");
+
+  function syncGlassHint() {
+    if (glass === 0) {
+      glassHint.className = "hint-line";
+      glassHint.innerHTML = "沿轮廓内侧加一圈<b>发光边线</b>，模拟 macOS Tahoe 的 <b>Liquid Glass</b>。不做模糊、不铺色，<b>画面完全不变</b>。";
+      return;
+    }
+    var soft = glass === 1;
+    glassHint.className = "hint-line";
+    glassHint.innerHTML = (soft ? "<b>柔和</b>：" : "<b>明显</b>：")
+      + "沿轮廓内侧加一圈<b>发光边线</b>，<b>画面完全不变</b>。"
+      + (shape === "none" ? " 原样形状下不明显，建议选圆角。" : "");
+  }
+
+  [].forEach.call(glassSeg.querySelectorAll("button"), function (b) {
+    b.addEventListener("click", function () {
+      glass = parseInt(b.dataset.glass, 10) || 0;
+      [].forEach.call(glassSeg.children, function (o) { o.classList.toggle("on", o === b); });
+      syncGlassHint();
+      scheduleRender();
+    });
   });
 
   /* =========================================================
@@ -855,7 +1280,9 @@
       stage.className = "stage";
 
       var cv = renderIcon(s.px);
-      var show = Math.min(s.px * zoom, MAX_DISPLAY);
+      // 一律铺满预览窗口：窗口边界即图像边界，
+      // 这样看到的空白只可能来自「四周留白」，不会与窗口自身留白混淆。
+      var show = STAGE * zoom;
       cv.style.width = show + "px";
       cv.style.height = show + "px";
       stage.appendChild(cv);
@@ -867,7 +1294,10 @@
 
       var cap2 = document.createElement("div");
       cap2.className = "cap2";
-      cap2.textContent = (show < s.px ? "显示 " + show + "px（实际 " + s.px + "px）" : s.note);
+      cap2.textContent = (show === s.px)
+        ? s.note
+        : (show > s.px ? "放大 " + (Math.round(show / s.px * 10) / 10) + "× 查看"
+                       : "显示 " + show + "px / 实际 " + s.px + "px");
 
       cell.appendChild(frame);
       cell.appendChild(cap);
@@ -877,8 +1307,9 @@
 
     var ok = list.length > 0;
     exportBtn.disabled = !ok;
-    factsEl.textContent = ok
-      ? "将写入 " + list.length + " 个尺寸： " + list.map(function (s) { return s.type; }).join(" ")
+    factsEl.innerHTML = ok
+      ? "导出 <b>1 个 .icns</b>，内含 " + list.length + " 个尺寸："
+        + list.map(function (s) { return s.type; }).join(" ")
       : "请至少选择一个尺寸";
   }
 
@@ -903,6 +1334,7 @@
       inspectWrap.hidden = true;
       inspectBtn.disabled = true;
       inspectHint.style.display = "";
+      syncBgHint();
       scheduleRender();
       setStatus("已载入 " + file.name + "（" + img.naturalWidth + "×" + img.naturalHeight + "），调整后导出 .icns");
     };
@@ -979,7 +1411,7 @@
       a.remove();
       setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
 
-      factsEl.textContent = "已生成 " + entries.length + " 个尺寸，共 " + humanSize(out.length);
+      factsEl.textContent = "1 个文件 · " + entries.length + " 个尺寸 · " + humanSize(out.length);
       inspectBtn.disabled = false;
       setStatus("已导出 " + sourceName + ".icns（" + humanSize(out.length) + "）");
     })().catch(function (err) {
@@ -1017,6 +1449,9 @@
      ========================================================= */
   setStatus("等待选择图片…");
   exportBtn.disabled = true;
+  syncPadHint();
+  syncBgHint();
+  syncGlassHint();
 })();
 </script>
 </body>
