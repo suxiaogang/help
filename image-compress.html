@@ -1,0 +1,1198 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>图片压缩转换</title>
+  <style>
+    :root {
+      --bg: #0e1116;
+      --panel: #171c24;
+      --panel-2: #1e2632;
+      --border: #2a3340;
+      --text: #e8edf4;
+      --muted: #8b97a8;
+      --accent: #3dd68c;
+      --accent-2: #2bb673;
+      --danger: #ff6b6b;
+      --warn: #ffb340;
+      --radius: 10px;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+              "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body { margin: 0; height: 100%; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      font-size: 13px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ---------- 页头 ---------- */
+    header {
+      flex: 0 0 auto;
+      padding: 11px 22px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    header h1 { font-size: 16px; margin: 0; font-weight: 600; letter-spacing: .3px; }
+    header .hint { font-size: 12px; color: var(--muted); }
+
+    /* ---------- 两列 ---------- */
+    .layout {
+      flex: 1 1 auto;
+      display: grid;
+      grid-template-columns: minmax(340px, 380px) minmax(0, 1fr);
+      /* 不写这行的话，隐式行是 auto 尺寸，会被内容撑高而不是被约束。
+         对比区固定高 + 列表可滚动的结构必须靠它才成立。 */
+      grid-template-rows: minmax(0, 1fr);
+      min-height: 0;
+    }
+    .column { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+    .column.left { border-right: 1px solid var(--border); }
+
+    .col-head {
+      flex: 0 0 auto;
+      padding: 9px 16px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      letter-spacing: .5px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      border-bottom: 1px solid var(--border);
+    }
+    .col-head .actions { display: flex; gap: 6px; }
+
+    .scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; }
+
+    /* ---------- 按钮 ---------- */
+    button {
+      font: inherit;
+      font-size: 12px;
+      padding: 6px 12px;
+      border-radius: 7px;
+      border: 1px solid var(--border);
+      background: var(--panel-2);
+      color: var(--text);
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background .15s, border-color .15s, opacity .15s;
+    }
+    button:hover:not(:disabled) { background: #232c39; border-color: #3a4557; }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+    button.primary { background: var(--accent); border-color: var(--accent); color: #062315; font-weight: 600; }
+    button.primary:hover:not(:disabled) { background: var(--accent-2); border-color: var(--accent-2); }
+    button.mini { padding: 4px 9px; font-size: 11px; }
+
+    /* ---------- 上传区 ---------- */
+    .drop {
+      flex: 0 0 auto;
+      margin: 8px 14px;
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 8px 14px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color .2s, background-color .2s;
+    }
+    .drop:hover, .drop.dragover { border-color: var(--accent); background: rgba(61, 214, 140, .06); }
+    .drop .inner { display: flex; align-items: center; gap: 10px; text-align: left; }
+    .drop .icon { font-size: 19px; line-height: 1; flex: 0 0 auto; }
+    .drop .text { color: var(--muted); font-size: 11px; line-height: 1.35; }
+    .drop .text b { color: var(--text); }
+    .drop input[type="file"] { display: none; }
+
+    /* ---------- 面板 ---------- */
+    .panel { padding: 0 14px 8px; }
+    .group + .group { margin-top: 6px; }
+    .group-title {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 8px; font-size: 11px; font-weight: 600; color: var(--muted);
+      letter-spacing: .4px; margin-bottom: 6px;
+    }
+    .group-title small { color: var(--muted); font-weight: 400; margin-left: 5px; }
+
+    .seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+    .seg button { padding: 5px 4px; font-size: 11.5px; }
+    .seg button.on { background: var(--accent); border-color: var(--accent); color: #062315; font-weight: 600; }
+
+    .slider-row { display: flex; align-items: center; gap: 9px; }
+    input[type="range"] {
+      flex: 1 1 auto; min-width: 0; height: 4px;
+      -webkit-appearance: none; appearance: none;
+      background: var(--border); border-radius: 3px; outline: none;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none; appearance: none;
+      width: 14px; height: 14px; border-radius: 50%;
+      background: var(--accent); cursor: pointer; border: none;
+    }
+    input[type="range"]::-moz-range-thumb {
+      width: 14px; height: 14px; border-radius: 50%;
+      background: var(--accent); cursor: pointer; border: none;
+    }
+    .slider-val {
+      flex: 0 0 auto; min-width: 46px; text-align: right;
+      font-family: var(--mono); font-size: 11px; color: var(--text);
+    }
+
+    select {
+      font: inherit; font-size: 11.5px;
+      background: var(--panel-2); color: var(--text);
+      border: 1px solid var(--border); border-radius: 7px;
+      padding: 5px 8px; cursor: pointer; width: 100%;
+    }
+
+    .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .check {
+      display: flex; align-items: center; gap: 7px;
+      font-size: 11.5px; color: var(--text); cursor: pointer; user-select: none;
+    }
+    .check input { accent-color: var(--accent); width: 13px; height: 13px; margin: 0; }
+
+    .hint-line { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--muted); }
+    .hint-line b { color: var(--text); font-weight: 600; }
+    .hint-line.ok { color: var(--accent); }
+    .hint-line.warn { color: var(--warn); }
+
+    .actions-stack { display: flex; flex-direction: column; gap: 7px; }
+    .actions-stack button { width: 100%; padding: 9px; font-size: 12.5px; }
+
+    .stats {
+      font-family: var(--mono); font-size: 10.5px;
+      color: var(--muted); line-height: 1.45;
+    }
+    .stats b { color: var(--text); font-weight: 600; }
+    .stats .save { color: var(--accent); }
+
+    /* ---------- 汇总条 ---------- */
+    .summary {
+      flex: 0 0 auto;
+      border-top: 1px solid var(--border);
+      padding: 9px 16px;
+      display: none;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+      background: var(--panel);
+    }
+    .summary.show { display: flex; }
+    .summary .metric { display: flex; flex-direction: column; gap: 1px; }
+    .summary .metric .k { font-size: 10.5px; color: var(--muted); }
+    .summary .metric .v { font-family: var(--mono); font-size: 13px; color: var(--text); }
+    .summary .metric .v.save { color: var(--accent); font-weight: 600; }
+
+    /* ---------- 预览 ---------- */
+    /* 对比区固定在上方，只有下方文件列表滚动——多图时不会把对比图顶走 */
+    .preview {
+      flex: 1 1 auto; min-height: 0;
+      display: flex; flex-direction: column;
+      overflow: hidden; padding: 16px;
+    }
+    .pv-top { flex: 0 0 auto; }
+    .pv-list {
+      flex: 1 1 auto; min-height: 0;
+      overflow-y: auto; overflow-x: hidden;
+      margin-top: 14px;
+      /* 给滚动条留点位置，避免贴边 */
+      padding-right: 2px;
+    }
+    .empty {
+      height: 220px; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 8px;
+      color: var(--muted); font-size: 12.5px; text-align: center; padding: 20px;
+    }
+    .empty .big { font-size: 38px; line-height: 1; opacity: .5; }
+
+    .compare {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+    .cmp-card {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--panel);
+      padding: 12px;
+      display: flex; flex-direction: column; gap: 8px;
+    }
+    .cmp-card .t {
+      font-size: 11px; color: var(--muted);
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    }
+    .cmp-card .t b { color: var(--text); font-weight: 600; }
+    .cmp-card .stage {
+      /* 跟随窗口高度，避免固定像素在大屏上显得局促 */
+      /* 对比区固定在顶部、列表占剩余空间，所以舞台不能太高，
+         否则下方列表被挤到只剩一行。横图的显示尺寸由卡片宽度决定，
+         适当压低舞台并不会让横图变小。 */
+      height: clamp(170px, 30vh, 320px);
+      background-image:
+        linear-gradient(45deg, #222a36 25%, transparent 25%, transparent 75%, #222a36 75%),
+        linear-gradient(45deg, #222a36 25%, transparent 25%, transparent 75%, #222a36 75%);
+      background-size: 12px 12px;
+      background-position: 0 0, 6px 6px;
+      background-color: #161b22;
+      border-radius: 7px;
+      display: flex; align-items: center; justify-content: center;
+      overflow: hidden;
+    }
+    .cmp-card .stage canvas, .cmp-card .stage img {
+      max-width: 100%; max-height: 100%; display: block; object-fit: contain;
+    }
+    .cmp-card .meta {
+      font-family: var(--mono); font-size: 10.5px; color: var(--muted);
+      display: flex; justify-content: space-between; gap: 8px;
+    }
+    .cmp-card .meta b { color: var(--text); font-weight: 600; }
+    .cmp-card.after .meta b { color: var(--accent); }
+
+    /* 节省条 */
+    .bar {
+      height: 6px; border-radius: 3px; background: var(--panel-2);
+      overflow: hidden; margin-top: 2px;
+    }
+    .bar i {
+      display: block; height: 100%;
+      background: linear-gradient(90deg, var(--accent), #7be3b0);
+      transition: width .25s;
+    }
+    .bar i.grow { background: linear-gradient(90deg, var(--warn), #ff8f6b); }
+
+    /* ---------- 文件列表 ---------- */
+    .flist { display: flex; flex-direction: column; gap: 7px; }
+    .fitem {
+      display: flex; align-items: center; gap: 10px;
+      border: 1px solid var(--border); border-radius: 9px;
+      background: var(--panel); padding: 7px 10px;
+      cursor: pointer; transition: border-color .15s, background .15s;
+    }
+    .fitem:hover { background: var(--panel-2); }
+    .fitem.on { border-color: var(--accent); background: rgba(61, 214, 140, .06); }
+    .fitem .thumb {
+      width: 38px; height: 38px; flex: 0 0 auto;
+      border-radius: 6px; overflow: hidden;
+      background-color: #161b22;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .fitem .thumb canvas { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .fitem .info { flex: 1 1 auto; min-width: 0; }
+    .fitem .nm {
+      font-size: 11.5px; color: var(--text);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .fitem .sz {
+      font-family: var(--mono); font-size: 10.5px; color: var(--muted);
+      display: flex; align-items: center; gap: 6px; margin-top: 2px;
+    }
+    .fitem .sz .arrow { color: var(--muted); }
+    .fitem .sz .new { color: var(--accent); }
+    .fitem .sz .grow { color: var(--warn); }
+    .fitem .sz .gain { color: var(--accent); font-weight: 600; }
+    .fitem .rm {
+      flex: 0 0 auto; padding: 3px 7px; font-size: 11px;
+      background: transparent; border-color: transparent; color: var(--muted);
+    }
+    .fitem .rm:hover { color: var(--danger); background: transparent; border-color: transparent; }
+    .fitem .err { color: var(--danger); font-size: 10.5px; }
+
+    ::-webkit-scrollbar { width: 9px; height: 9px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #2c3542; border-radius: 5px; }
+    ::-webkit-scrollbar-thumb:hover { background: #3a4557; }
+
+    @media (max-width: 820px) {
+      html, body { height: auto; }
+      body { overflow: visible; }
+      .layout { grid-template-columns: 1fr; grid-template-rows: auto auto; }
+      .column.left { border-right: none; border-bottom: 1px solid var(--border); flex: 0 0 auto; }
+      .scroll { overflow: visible; }
+      .preview { min-height: 0; }
+      .empty { height: 180px; }
+      .col-head { flex-wrap: wrap; padding: 9px 12px; }
+      header h1 { font-size: 15px; }
+    }
+
+    /* 对比区要能并排看，只有很窄时才堆叠 */
+    @media (max-width: 560px) {
+      .compare { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>图片压缩转换</h1>
+    <span class="hint">转成 WebP / JPEG 显著减小体积 · 纯前端处理，图片不上传</span>
+  </header>
+
+  <div class="layout">
+
+    <!-- ================= 左列：设置 ================= -->
+    <section class="column left">
+
+      <div class="drop" id="drop">
+        <div class="inner">
+          <div class="icon">🗜️</div>
+          <div class="text"><b>点击选择图片</b>，可多选；或拖拽到这里<br />也可 Ctrl/⌘ + V 粘贴</div>
+        </div>
+        <input type="file" id="fileInput" accept="image/*" multiple />
+      </div>
+
+      <div class="scroll">
+        <div class="panel">
+
+          <!-- 输出格式 -->
+          <div class="group">
+            <div class="group-title"><span>输出格式</span></div>
+            <div class="seg" id="fmtSeg">
+              <button type="button" data-fmt="image/webp" class="on">WebP</button>
+              <button type="button" data-fmt="image/jpeg">JPEG</button>
+              <button type="button" data-fmt="image/png">PNG</button>
+            </div>
+            <div class="hint-line" id="fmtHint"></div>
+          </div>
+
+          <!-- 质量 -->
+          <div class="group">
+            <div class="group-title">
+              <span>质量<small id="qNote">（0.9≈原图观感）</small></span>
+              <span class="tools">
+                <button type="button" class="mini" id="qReset">复位</button>
+              </span>
+            </div>
+            <div class="slider-row">
+              <input type="range" id="qRange" min="0.3" max="1" step="0.01" value="0.85" />
+              <span class="slider-val" id="qVal">0.85</span>
+            </div>
+          </div>
+
+          <!-- 尺寸 -->
+          <div class="group">
+            <div class="group-title"><span>尺寸<small>缩放同样能显著减小体积</small></span></div>
+            <select id="sizeSel">
+              <option value="0">保持原始尺寸</option>
+              <option value="3840">最长边 3840</option>
+              <option value="2560">最长边 2560</option>
+              <option value="1920">最长边 1920</option>
+              <option value="1280">最长边 1280</option>
+              <option value="1024">最长边 1024</option>
+              <option value="800">最长边 800</option>
+              <option value="512">最长边 512</option>
+              <option value="256">最长边 256</option>
+            </select>
+          </div>
+
+          <!-- 透明处理 -->
+          <div class="group" id="alphaGroup">
+            <div class="group-title"><span>透明区域<small>JPEG 不支持透明</small></span></div>
+            <div class="row2">
+              <label class="check"><input type="checkbox" id="fillOn" checked />填充底色</label>
+              <input type="color" id="fillColor" value="#ffffff"
+                     style="width:100%;height:26px;padding:2px;background:var(--panel-2);border:1px solid var(--border);border-radius:6px;cursor:pointer" />
+            </div>
+          </div>
+
+          <!-- 操作 -->
+          <div class="group">
+            <div class="group-title"><span>导出</span></div>
+            <div class="actions-stack">
+              <button type="button" class="primary" id="convertBtn" disabled>开始转换</button>
+              <button type="button" id="zipBtn" disabled>全部下载（ZIP）</button>
+            </div>
+            <div class="hint-line" id="statusLine"></div>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= 右列 ================= -->
+    <section class="column right">
+
+      <div class="col-head">
+        <span>效果预览</span>
+        <div class="actions">
+          <button type="button" class="mini" id="clearBtn" disabled>清空</button>
+        </div>
+      </div>
+
+      <div class="preview" id="preview">
+        <div class="pv-top">
+        <div class="empty" id="empty">
+          <div class="big">🗜️</div>
+          <div>选择图片开始</div>
+          <div style="font-size:11.5px;color:var(--muted)">转换后的体积是真实编码后算出来的，不是估算</div>
+        </div>
+
+        <div id="cmpWrap" hidden>
+          <div class="compare">
+            <div class="cmp-card">
+              <div class="t"><b>原图</b><span id="srcType"></span></div>
+              <div class="stage" id="srcStage"></div>
+              <div class="meta"><span>体积</span><b id="srcSize">—</b></div>
+            </div>
+            <div class="cmp-card after">
+              <div class="t"><b>转换后</b><span id="dstType"></span></div>
+              <div class="stage" id="dstStage"></div>
+              <div class="meta"><span>体积</span><b id="dstSize">—</b></div>
+            </div>
+          </div>
+          <div class="bar" id="cmpBarWrap"><i id="cmpBar" style="width:0%"></i></div>
+          <div class="hint-line" id="cmpText"></div>
+        </div>
+
+        </div><!-- /pv-top -->
+
+        <div class="pv-list" id="listWrap">
+          <div class="flist" id="flist"></div>
+        </div>
+      </div>
+
+      <div class="summary" id="summary">
+        <div class="metric"><span class="k">文件</span><span class="v" id="sumCount">0</span></div>
+        <div class="metric"><span class="k">原始体积</span><span class="v" id="sumBefore">0 B</span></div>
+        <div class="metric"><span class="k">转换后</span><span class="v" id="sumAfter">0 B</span></div>
+        <div class="metric"><span class="k">节省</span><span class="v save" id="sumSave">0 B</span></div>
+        <div class="metric"><span class="k">占比</span><span class="v save" id="sumPct">0%</span></div>
+      </div>
+
+    </section>
+  </div>
+
+  <footer>
+    <span class="dot"></span><span id="statusText">等待选择图片…</span>
+  </footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* =========================================================
+     编码能力探测
+     ------------------------------------------------------------
+     canvas.toBlob 对不支持的格式会「静默回退」而不是报错——
+     实测 toBlob('image/avif') 在 Chrome 下返回的是 PNG。
+     所以这里必须先编码一张小图、看返回的 type 是否等于请求值，
+     否则会把 PNG 当成 AVIF 交出去。
+     ========================================================= */
+  function probeType(type) {
+    return new Promise(function (resolve) {
+      var c = document.createElement("canvas");
+      c.width = c.height = 8;
+      var x = c.getContext("2d");
+      x.fillStyle = "#f0f"; x.fillRect(0, 0, 8, 8);
+      c.toBlob(function (b) {
+        resolve(!!b && b.type === type);
+      }, type, 0.8);
+    });
+  }
+
+  var SUPPORT = {};
+
+  /* =========================================================
+     ZIP 打包（STORE，不压缩）
+     ------------------------------------------------------------
+     PNG / WebP / JPEG 本身已经是压缩数据，再 deflate 几乎无收益，
+     所以直接 store，既省 CPU 也避免引入压缩库。
+     ========================================================= */
+  var CRC_TABLE = (function () {
+    var t = new Uint32Array(256);
+    for (var n = 0; n < 256; n++) {
+      var c = n;
+      for (var k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+      t[n] = c >>> 0;
+    }
+    return t;
+  })();
+
+  function crc32(u8) {
+    var c = 0xFFFFFFFF;
+    for (var i = 0; i < u8.length; i++) c = CRC_TABLE[(c ^ u8[i]) & 0xFF] ^ (c >>> 8);
+    return (c ^ 0xFFFFFFFF) >>> 0;
+  }
+
+  function dosDateTime(d) {
+    var time = ((d.getHours() & 31) << 11) | ((d.getMinutes() & 63) << 5) | ((d.getSeconds() / 2) & 31);
+    var date = (((d.getFullYear() - 1980) & 127) << 9) | (((d.getMonth() + 1) & 15) << 5) | (d.getDate() & 31);
+    return { time: time & 0xFFFF, date: date & 0xFFFF };
+  }
+
+  function makeZip(entries) {
+    var enc = new TextEncoder();
+    var now = new Date();
+    var dt = dosDateTime(now);
+    var locals = [], centrals = [];
+    var offset = 0;
+
+    entries.forEach(function (e) {
+      var nameBytes = enc.encode(e.name);
+      var crc = crc32(e.data);
+
+      var lh = new Uint8Array(30 + nameBytes.length);
+      var lv = new DataView(lh.buffer);
+      lv.setUint32(0, 0x04034b50, true);
+      lv.setUint16(4, 20, true);            // version needed
+      lv.setUint16(6, 0x0800, true);        // UTF-8 文件名
+      lv.setUint16(8, 0, true);             // method = store
+      lv.setUint16(10, dt.time, true);
+      lv.setUint16(12, dt.date, true);
+      lv.setUint32(14, crc, true);
+      lv.setUint32(18, e.data.length, true);
+      lv.setUint32(22, e.data.length, true);
+      lv.setUint16(26, nameBytes.length, true);
+      lv.setUint16(28, 0, true);
+      lh.set(nameBytes, 30);
+      locals.push(lh, e.data);
+
+      var ch = new Uint8Array(46 + nameBytes.length);
+      var cv = new DataView(ch.buffer);
+      cv.setUint32(0, 0x02014b50, true);
+      cv.setUint16(4, 20, true);            // version made by
+      cv.setUint16(6, 20, true);            // version needed
+      cv.setUint16(8, 0x0800, true);
+      cv.setUint16(10, 0, true);
+      cv.setUint16(12, dt.time, true);
+      cv.setUint16(14, dt.date, true);
+      cv.setUint32(16, crc, true);
+      cv.setUint32(20, e.data.length, true);
+      cv.setUint32(24, e.data.length, true);
+      cv.setUint16(28, nameBytes.length, true);
+      cv.setUint16(30, 0, true);            // extra
+      cv.setUint16(32, 0, true);            // comment
+      cv.setUint16(34, 0, true);            // disk
+      cv.setUint16(36, 0, true);            // internal attrs
+      cv.setUint32(38, 0, true);            // external attrs
+      cv.setUint32(42, offset, true);
+      ch.set(nameBytes, 46);
+      centrals.push(ch);
+
+      offset += lh.length + e.data.length;
+    });
+
+    var cdSize = centrals.reduce(function (s, c) { return s + c.length; }, 0);
+    var eocd = new Uint8Array(22);
+    var ev = new DataView(eocd.buffer);
+    ev.setUint32(0, 0x06054b50, true);
+    ev.setUint16(8, entries.length, true);
+    ev.setUint16(10, entries.length, true);
+    ev.setUint32(12, cdSize, true);
+    ev.setUint32(16, offset, true);
+
+    var all = locals.concat(centrals, [eocd]);
+    var total = all.reduce(function (s, a) { return s + a.length; }, 0);
+    var out = new Uint8Array(total);
+    var p = 0;
+    all.forEach(function (a) { out.set(a, p); p += a.length; });
+    return out;
+  }
+
+  /* =========================================================
+     工具
+     ========================================================= */
+  function humanSize(n) {
+    if (!n) return "0 B";
+    if (n < 1024) return n + " B";
+    if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB";
+    return (n / 1024 / 1024).toFixed(2) + " MB";
+  }
+  function extOf(type) {
+    return { "image/webp": "webp", "image/jpeg": "jpg", "image/png": "png" }[type] || "img";
+  }
+  function niceType(type) {
+    return { "image/webp": "WebP", "image/jpeg": "JPEG", "image/png": "PNG",
+             "image/gif": "GIF", "image/bmp": "BMP", "image/avif": "AVIF",
+             "image/svg+xml": "SVG", "image/tiff": "TIFF" }[type] || type.replace("image/", "").toUpperCase();
+  }
+  function setStatus(t) { statusText.textContent = t; }
+
+  /* =========================================================
+     核心转换：预览与导出走同一条路径
+     ========================================================= */
+  // 解码。优先 createImageBitmap 并按 EXIF 方向纠正——手机照片
+  // 常常靠 EXIF Orientation 标记旋转，不处理会躺倒。
+  function decode(file) {
+    return new Promise(function (resolve, reject) {
+      var url = URL.createObjectURL(file);
+      function done(ok, img) {
+        URL.revokeObjectURL(url);
+        ok ? resolve(img) : reject(new Error("解码失败"));
+      }
+      if (typeof createImageBitmap === "function") {
+        createImageBitmap(file, { imageOrientation: "from-image" })
+          .then(function (b) { done(true, b); })
+          .catch(function () { fallback(); });
+      } else fallback();
+
+      function fallback() {
+        var im = new Image();
+        im.onload = function () { done(true, im); };
+        im.onerror = function () { done(false); };
+        im.src = url;
+      }
+    });
+  }
+
+  // 按当前设置把位图画到画布并编码，返回 { blob, w, h }
+  function encode(img, fmt, opts) {
+    return new Promise(function (resolve, reject) {
+      var sw = img.width || img.naturalWidth;
+      var sh = img.height || img.naturalHeight;
+      var longest = opts.maxEdge || 0;
+      var k = (longest && Math.max(sw, sh) > longest) ? longest / Math.max(sw, sh) : 1;
+      var w = Math.max(1, Math.round(sw * k));
+      var h = Math.max(1, Math.round(sh * k));
+
+      var cv = document.createElement("canvas");
+      cv.width = w; cv.height = h;
+      var x = cv.getContext("2d");
+      x.imageSmoothingEnabled = true;
+      x.imageSmoothingQuality = "high";
+
+      // JPEG 无 alpha，透明处默认会变黑，所以先铺底色
+      if (fmt === "image/jpeg") {
+        if (opts.fillOn) { x.fillStyle = opts.fillColor; x.fillRect(0, 0, w, h); }
+        else { x.fillStyle = "#ffffff"; x.fillRect(0, 0, w, h); }
+      }
+      x.drawImage(img, 0, 0, w, h);
+
+      if (fmt === "image/png") { cv.toBlob(done, fmt); }       // PNG 无质量参数
+      else cv.toBlob(done, fmt, opts.quality);
+      function done(b) { b ? resolve({ blob: b, w: w, h: h }) : reject(new Error("编码失败")); }
+    });
+  }
+
+  /* =========================================================
+     状态
+     ========================================================= */
+  var files = [];       // { id, file, name, size, img, alpha, out, err }
+  var selId = null;
+  var fmt = "image/webp";
+  var quality = 0.85;
+  var maxEdge = 0;
+  var fillOn = true;
+  var fillColor = "#ffffff";
+  var seq = 0;
+
+  var drop = document.getElementById("drop");
+  var fileInput = document.getElementById("fileInput");
+  var fmtSeg = document.getElementById("fmtSeg");
+  var fmtHint = document.getElementById("fmtHint");
+  var qRange = document.getElementById("qRange");
+  var qVal = document.getElementById("qVal");
+  var qNote = document.getElementById("qNote");
+  var qReset = document.getElementById("qReset");
+  var sizeSel = document.getElementById("sizeSel");
+  var alphaGroup = document.getElementById("alphaGroup");
+  var fillOnEl = document.getElementById("fillOn");
+  var fillColorEl = document.getElementById("fillColor");
+  var convertBtn = document.getElementById("convertBtn");
+  var zipBtn = document.getElementById("zipBtn");
+  var statusLine = document.getElementById("statusLine");
+  var clearBtn = document.getElementById("clearBtn");
+  var preview = document.getElementById("preview");
+  var emptyEl = document.getElementById("empty");
+  var cmpWrap = document.getElementById("cmpWrap");
+  var flistEl = document.getElementById("flist");
+  var summary = document.getElementById("summary");
+  var statusText = document.getElementById("statusText");
+
+  function opts() {
+    return { quality: quality, maxEdge: maxEdge, fillOn: fillOn, fillColor: fillColor };
+  }
+
+  /* =========================================================
+     载入文件
+     ========================================================= */
+  function addFiles(list) {
+    var arr = Array.prototype.slice.call(list).filter(function (f) {
+      return /^image\//.test(f.type) || /\.(png|jpe?g|webp|gif|bmp|avif|svg)$/i.test(f.name);
+    });
+    if (!arr.length) { setStatus("没有可处理的图片文件"); return; }
+
+    Promise.all(arr.map(function (f) {
+      return decode(f).then(function (img) {
+        return { file: f, img: img, alpha: detectAlpha(img) };
+      }).catch(function () {
+        return { file: f, img: null, alpha: false, err: "解码失败" };
+      });
+    })).then(function (items) {
+      items.forEach(function (it) {
+        files.push({
+          id: ++seq,
+          file: it.file,
+          name: it.file.name,
+          size: it.file.size,
+          type: it.file.type,
+          img: it.img,
+          alpha: it.alpha,
+          err: it.err || null,
+          out: null
+        });
+      });
+      if (selId === null && files.length) selId = files[files.length - 1].id;
+      setStatus("已加入 " + items.length + " 张图片，共 " + humanSize(
+        items.reduce(function (s, i) { return s + i.file.size; }, 0)));
+      syncUI();
+    });
+  }
+
+  // 缩采样检测是否有透明像素（避免在整张图上 getImageData 卡顿）
+  function detectAlpha(img) {
+    try {
+      var s = 48;
+      var cv = document.createElement("canvas");
+      cv.width = cv.height = s;
+      var x = cv.getContext("2d");
+      x.drawImage(img, 0, 0, s, s);
+      var d = x.getImageData(0, 0, s, s).data;
+      for (var i = 3; i < d.length; i += 4) if (d[i] < 250) return true;
+    } catch (e) { /* 跨域画布读不到，保守当作不透明 */ }
+    return false;
+  }
+
+  /* =========================================================
+     转换
+     ========================================================= */
+  function convertAll() {
+    if (!files.length) return;
+    var targets = files.filter(function (f) { return f.img && !f.err; });
+    if (!targets.length) return;
+
+    convertBtn.disabled = true;
+    var done = 0;
+    var t0 = performance.now();
+
+    // 逐个串行编码，避免大图同时编码把内存打爆
+    var chain = Promise.resolve();
+    targets.forEach(function (rec) {
+      chain = chain.then(function () {
+        return encode(rec.img, fmt, opts()).then(function (r) {
+          rec.out = { blob: r.blob, w: r.w, h: r.h, name: baseName(rec.name) + "." + extOf(fmt) };
+        }).catch(function (e) {
+          rec.out = null; rec.err = e.message || "编码失败";
+        }).then(function () {
+          done++;
+          statusLine.textContent = "转换中… " + done + " / " + targets.length;
+          if (done % 3 === 0 || done === targets.length) renderList();
+        });
+      });
+    });
+
+    chain.then(function () {
+      convertBtn.disabled = false;
+      var ms = Math.round(performance.now() - t0);
+      renderList();
+      renderCompare();
+      syncUI();
+      // 进度只在转换期间有意义，完成后清掉；
+      // 结果由底部状态条承担，两处重复显示反而啰嗦
+      statusLine.textContent = "";
+      setStatus("转换完成：" + done + " 张，用时 " + ms + " ms");
+    });
+  }
+
+  function baseName(n) {
+    return n.replace(/\.[^.]+$/, "") || "image";
+  }
+
+  /* =========================================================
+     下载
+     ========================================================= */
+  function downloadBlob(blob, name) {
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+  }
+
+  zipBtn.addEventListener("click", function () {
+    var list = files.filter(function (f) { return f.out; });
+    if (!list.length) return;
+    // 文件名去重，避免同名互相覆盖
+    var seen = {};
+    var entries = list.map(function (f) {
+      var n = f.out.name, i = 2;
+      while (seen[n]) { n = f.out.name.replace(/(\.[^.]+)$/, "-" + i++ + "$1"); }
+      seen[n] = 1;
+      return f.out.blob.arrayBuffer().then(function (b) { return { name: n, data: new Uint8Array(b) }; });
+    });
+
+    Promise.all(entries).then(function (all) {
+      var zip = makeZip(all);
+      downloadBlob(new Blob([zip], { type: "application/zip" }), "images-webp.zip");
+      setStatus("已打包 " + all.length + " 个文件，" + humanSize(zip.length));
+    });
+  });
+
+  /* =========================================================
+     渲染：列表 / 对比 / 汇总
+     ========================================================= */
+  function renderList() {
+    flistEl.textContent = "";
+    files.forEach(function (f) {
+      var el = document.createElement("div");
+      el.className = "fitem" + (f.id === selId ? " on" : "");
+      el.addEventListener("click", function (e) {
+        if (e.target.closest(".rm")) return;
+        selId = f.id;
+        renderList(); renderCompare();
+      });
+
+      var th = document.createElement("div");
+      th.className = "thumb";
+      if (f.img) {
+        var tc = document.createElement("canvas");
+        var s = 38;
+        // 后备存储要按 devicePixelRatio 放大。CSS 尺寸仍是 38px，
+        // 若后备也只画 38px，在 DPR=2 的屏上会被放大一倍，缩略图就糊了。
+        var k = Math.min(s / f.img.width, s / f.img.height) * (window.devicePixelRatio || 1);
+        tc.width = Math.max(1, Math.round(f.img.width * k));
+        tc.height = Math.max(1, Math.round(f.img.height * k));
+        var tx = tc.getContext("2d");
+        tx.imageSmoothingQuality = "high";
+        tx.fillStyle = "#161b22"; tx.fillRect(0, 0, tc.width, tc.height);
+        tx.drawImage(f.img, 0, 0, tc.width, tc.height);
+        th.appendChild(tc);
+      }
+
+      var info = document.createElement("div");
+      info.className = "info";
+      var nm = document.createElement("div");
+      nm.className = "nm";
+      nm.textContent = f.name;
+      var sz = document.createElement("div");
+      sz.className = "sz";
+
+      if (f.err) {
+        sz.innerHTML = '<span class="err">' + f.err + "</span>";
+      } else if (f.out) {
+        var before = f.size, after = f.out.blob.size;
+        var saved = before - after;
+        var pct = before ? (saved / before * 100) : 0;
+        var bigger = saved < 0;
+        sz.innerHTML =
+          '<span>' + humanSize(before) + '</span><span class="arrow">→</span>'
+          + '<span class="' + (bigger ? "grow" : "new") + '">' + humanSize(after) + '</span>'
+          + '<span class="' + (bigger ? "grow" : "gain") + '">'
+          + (bigger ? "+" + (-pct).toFixed(1) + "%" : "-" + pct.toFixed(1) + "%")
+          + "</span>";
+      } else {
+        sz.innerHTML = '<span>' + humanSize(f.size) + '</span><span style="color:var(--muted)">未转换</span>';
+      }
+
+      info.appendChild(nm);
+      info.appendChild(sz);
+
+      var right = document.createElement("div");
+      right.style.display = "flex";
+      right.style.gap = "4px";
+      right.style.alignItems = "center";
+      if (f.out) {
+        var dl = document.createElement("button");
+        dl.className = "mini";
+        dl.textContent = "下载";
+        dl.title = "下载 " + f.out.name;
+        dl.addEventListener("click", function (e) {
+          e.stopPropagation();
+          downloadBlob(f.out.blob, f.out.name);
+        });
+        right.appendChild(dl);
+      }
+      var rm = document.createElement("button");
+      rm.className = "rm";
+      rm.textContent = "✕";
+      rm.title = "移除";
+      rm.addEventListener("click", function (e) {
+        e.stopPropagation();
+        files = files.filter(function (x) { return x.id !== f.id; });
+        if (selId === f.id) selId = files.length ? files[0].id : null;
+        syncUI(); renderList(); renderCompare();
+      });
+      right.appendChild(rm);
+
+      el.appendChild(th);
+      el.appendChild(info);
+      el.appendChild(right);
+      flistEl.appendChild(el);
+    });
+  }
+
+  // 把图片放进预览区。用 <img> + objectURL 而不是 canvas：
+  // 尺寸交给 CSS 的 max-width/max-height + object-fit 去贴合容器，
+  // 这样窗口怎么变都不用改 JS，且不必在内存里常驻一张全尺寸画布。
+  var stageURLs = [];
+  var revokeTimer = null;
+  function stageImg(stage, blob) {
+    var url = URL.createObjectURL(blob);
+    stageURLs.push(url);
+    var im = new Image();
+    im.alt = "";
+    im.src = url;
+    stage.textContent = "";
+    stage.appendChild(im);
+  }
+  function releaseStageURLs() {
+    var dead = stageURLs;
+    stageURLs = [];
+    if (!dead.length) return;
+    // 转换过程中 renderCompare 会被连续调用多次。若在 <img> 仍在加载时
+    // 立刻 revoke，那次请求会被中断并在控制台报 ERR_FILE_NOT_FOUND。
+    // 延迟回收即可，旧节点早已从文档摘掉，不会造成内存堆积。
+    if (revokeTimer) clearTimeout(revokeTimer);
+    revokeTimer = setTimeout(function () {
+      dead.forEach(function (u) { URL.revokeObjectURL(u); });
+    }, 3000);
+  }
+
+  function renderCompare() {
+    // 先把 <img> 从文档里摘掉，再回收 objectURL；
+    // 顺序反了会让浏览器回头去读已撤销的地址，报 ERR_FILE_NOT_FOUND
+    var st1 = document.getElementById("srcStage");
+    var st2 = document.getElementById("dstStage");
+    if (st1) st1.textContent = "";
+    if (st2) st2.textContent = "";
+    releaseStageURLs();
+    var f = files.filter(function (x) { return x.id === selId; })[0];
+    if (!f || f.err || !f.img) { cmpWrap.hidden = true; emptyEl.style.display = ""; return; }
+    emptyEl.style.display = "none";
+    cmpWrap.hidden = false;
+
+    document.getElementById("srcType").textContent =
+      niceType(f.type) + " · " + f.img.width + "×" + f.img.height;
+    document.getElementById("srcSize").textContent = humanSize(f.size);
+
+    stageImg(document.getElementById("srcStage"), f.file);
+
+    document.getElementById("dstType").textContent =
+      niceType(fmt) + (fmt === "image/png" ? "（无损）" : " · 质量 " + quality.toFixed(2));
+
+    var dsz = document.getElementById("dstSize");
+    var bar = document.getElementById("cmpBar");
+    var barWrap = document.getElementById("cmpBarWrap");
+    var txt = document.getElementById("cmpText");
+
+    if (!f.out) {
+      dsz.textContent = "未转换";
+      bar.style.width = "0%";
+      barWrap.style.display = "none";
+      txt.className = "hint-line";
+      txt.innerHTML = "点左栏「开始转换」后显示对比结果。";
+      return;
+    }
+
+    barWrap.style.display = "";
+    var after = f.out.blob.size;
+    dsz.textContent = humanSize(after) + " · " + f.out.w + "×" + f.out.h;
+    // 之前这里漏了渲染，转换后一栏始终是空的
+    stageImg(document.getElementById("dstStage"), f.out.blob);
+
+    var pct = f.size ? (f.size - after) / f.size * 100 : 0;
+    bar.className = pct < 0 ? "grow" : "";
+    bar.style.width = Math.max(0, Math.min(100, pct)) + "%";
+
+    if (pct >= 0) {
+      txt.className = "hint-line ok";
+      txt.innerHTML = "体积减少 <b>" + humanSize(f.size - after) + "</b>（-" + pct.toFixed(1) + "%）"
+        + (f.alpha && fmt === "image/jpeg" ? "。注意：JPEG 不支持透明，已填充底色。" : "");
+    } else {
+      txt.className = "hint-line warn";
+      txt.innerHTML = "转换后<b>反而大了</b>：" + humanSize(after) + " &gt; 原始 " + humanSize(f.size)
+        + "。原图可能已经高度压缩，可尝试提高质量、换成 PNG，或缩短最长边。";
+    }
+  }
+
+  function syncUI() {
+    var n = files.length;
+    convertBtn.disabled = !files.some(function (f) { return f.img && !f.err; });
+    clearBtn.disabled = !n;
+    var anyOut = files.some(function (f) { return f.out; });
+    zipBtn.disabled = !anyOut;
+
+    // 汇总
+    var ok = files.filter(function (f) { return f.out; });
+    summary.classList.toggle("show", anyOut);
+    if (anyOut) {
+      var before = ok.reduce(function (s, f) { return s + f.size; }, 0);
+      var after = ok.reduce(function (s, f) { return s + f.out.blob.size; }, 0);
+      document.getElementById("sumCount").textContent = ok.length;
+      document.getElementById("sumBefore").textContent = humanSize(before);
+      document.getElementById("sumAfter").textContent = humanSize(after);
+      document.getElementById("sumSave").textContent = before - after >= 0
+        ? humanSize(before - after) : "+" + humanSize(after - before);
+      var p = before ? (before - after) / before * 100 : 0;
+      document.getElementById("sumPct").textContent = (p >= 0 ? "-" : "+") + Math.abs(p).toFixed(1) + "%";
+    }
+
+    // 格式提示
+    fmtHint.className = "hint-line";
+    if (!SUPPORT[fmt]) {
+      fmtHint.classList.add("warn");
+      fmtHint.innerHTML = "当前浏览器<b>不支持</b>输出 " + niceType(fmt) + "，请换其他格式。";
+    } else if (fmt === "image/jpeg") {
+      fmtHint.innerHTML = "对不透明照片通常<b>最省体积</b>，但会<b>丢弃全部元数据且不支持透明</b>。";
+    } else if (fmt === "image/png") {
+      fmtHint.innerHTML = "PNG 是<b>无损</b>的，质量滑块对其无效，体积通常不会变小——除非缩放尺寸或原图本身没压过。";
+    } else {
+      fmtHint.innerHTML = "WebP 是主力推荐：<b>比 JPEG 通常再小 25%</b>，且<b>支持透明</b>。";
+    }
+
+    // PNG 不受质量影响
+    var png = fmt === "image/png";
+    qRange.disabled = png;
+    qNote.textContent = png ? "（PNG 无损，滑块无效）" : "（0.9≈原图观感，0.6≈明显压缩）";
+    alphaGroup.style.display = fmt === "image/jpeg" ? "" : "none";
+
+    renderList();
+    renderCompare();
+  }
+
+  /* =========================================================
+     交互
+     ========================================================= */
+  drop.addEventListener("click", function () { fileInput.click(); });
+  fileInput.addEventListener("change", function () {
+    if (fileInput.files && fileInput.files.length) addFiles(fileInput.files);
+    fileInput.value = "";
+  });
+
+  ["dragenter", "dragover"].forEach(function (ev) {
+    drop.addEventListener(ev, function (e) {
+      e.preventDefault(); e.stopPropagation();
+      drop.classList.add("dragover");
+    });
+  });
+  ["dragleave", "drop"].forEach(function (ev) {
+    drop.addEventListener(ev, function (e) {
+      e.preventDefault(); e.stopPropagation();
+      drop.classList.remove("dragover");
+    });
+  });
+  drop.addEventListener("drop", function (e) {
+    if (e.dataTransfer && e.dataTransfer.files.length) addFiles(e.dataTransfer.files);
+  });
+
+  document.addEventListener("paste", function (e) {
+    var items = e.clipboardData && e.clipboardData.items;
+    if (!items) return;
+    var picked = [];
+    for (var i = 0; i < items.length; i++) {
+      if (items[i].type && items[i].type.indexOf("image/") === 0) {
+        var f = items[i].getAsFile();
+        if (f) picked.push(f);
+      }
+    }
+    if (picked.length) { addFiles(picked); e.preventDefault(); }
+  });
+
+  [].forEach.call(fmtSeg.querySelectorAll("button"), function (b) {
+    b.addEventListener("click", function () {
+      fmt = b.dataset.fmt;
+      [].forEach.call(fmtSeg.children, function (o) { o.classList.toggle("on", o === b); });
+      // 换格式后旧的编码结果失效
+      files.forEach(function (f) { f.out = null; f.err = null; });
+      syncUI();
+    });
+  });
+
+  qRange.addEventListener("input", function () {
+    quality = parseFloat(qRange.value);
+    qVal.textContent = quality.toFixed(2);
+    files.forEach(function (f) { if (f.out) f.out = null; });   // 体积会变，需重算
+    syncUI();
+    if (files.length) debouncedPreview();
+  });
+  qReset.addEventListener("click", function () {
+    qRange.value = "0.85";
+    quality = 0.85;
+    qVal.textContent = "0.85";
+    files.forEach(function (f) { if (f.out) f.out = null; });
+    syncUI();
+    if (files.length) debouncedPreview();
+  });
+
+  sizeSel.addEventListener("change", function () {
+    maxEdge = parseInt(sizeSel.value, 10) || 0;
+    files.forEach(function (f) { if (f.out) f.out = null; });
+    syncUI();
+    if (files.length) debouncedPreview();
+  });
+
+  fillOnEl.addEventListener("change", function () {
+    fillOn = fillOnEl.checked;
+    files.forEach(function (f) { if (f.out) f.out = null; });
+    syncUI();
+    if (files.length && fmt === "image/jpeg") debouncedPreview();
+  });
+  fillColorEl.addEventListener("input", function () {
+    fillColor = fillColorEl.value;
+    files.forEach(function (f) { if (f.out) f.out = null; });
+    syncUI();
+    if (files.length && fmt === "image/jpeg") debouncedPreview();
+  });
+
+  convertBtn.addEventListener("click", convertAll);
+  clearBtn.addEventListener("click", function () {
+    files = []; selId = null;
+    statusLine.textContent = "";
+    setStatus("等待选择图片…");
+    syncUI();
+  });
+
+  // 拖动滑块时只对当前选中项做一次即时编码，给出体积反馈
+  var pvTimer = null;
+  function debouncedPreview() {
+    var f = files.filter(function (x) { return x.id === selId && x.img; })[0];
+    if (!f) return;
+    if (pvTimer) clearTimeout(pvTimer);
+    pvTimer = setTimeout(function () {
+      encode(f.img, fmt, opts()).then(function (r) {
+        f.out = { blob: r.blob, w: r.w, h: r.h, name: baseName(f.name) + "." + extOf(fmt) };
+        renderList(); renderCompare(); syncUI();
+        setStatus("当前项预览：" + humanSize(f.size) + " → " + humanSize(r.blob.size));
+      }).catch(function () {});
+    }, 180);
+  }
+
+  /* =========================================================
+     初始化
+     ========================================================= */
+  setStatus("等待选择图片…");
+  (async function () {
+    var types = ["image/webp", "image/jpeg", "image/png"];
+    for (var i = 0; i < types.length; i++) {
+      SUPPORT[types[i]] = await probeType(types[i]);
+    }
+    if (!SUPPORT["image/webp"]) {
+      // 退回到浏览器确实支持的格式，别让用户点了才发现
+      fmt = SUPPORT["image/jpeg"] ? "image/jpeg" : "image/png";
+      [].forEach.call(fmtSeg.children, function (b) {
+        b.classList.toggle("on", b.dataset.fmt === fmt);
+        b.disabled = !SUPPORT[b.dataset.fmt];
+      });
+    }
+    syncUI();
+  })();
+})();
+</script>
+</body>
+</html>
