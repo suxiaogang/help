@@ -1,0 +1,844 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>视频抽帧</title>
+  <meta name="description" content="从视频中抽出单帧画面，按时间定位、逐帧微调后导出 PNG / JPEG / WebP，纯前端处理，视频不上传" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23171c24'/%3E%3Ctext x='16' y='23' font-size='18' font-weight='bold' font-family='ui-monospace,Menlo,monospace' fill='%233dd68c' text-anchor='middle'%3E%3E_%3C/text%3E%3C/svg%3E" />
+  <style>
+    /* 与各工具子页面共用同一套色板，改这里即可整体换肤 */
+    :root {
+      --bg: #0e1116;
+      --panel: #171c24;
+      --panel-2: #1e2632;
+      --border: #2a3340;
+      --text: #e8edf4;
+      --muted: #8b97a8;
+      --accent: #3dd68c;
+      --accent-2: #2bb673;
+      --warn: #ffb340;
+      --radius: 10px;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+              "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; }
+
+    body {
+      background: var(--bg); color: var(--text);
+      font-family: var(--sans); font-size: 13px;
+      display: flex; flex-direction: column; overflow: hidden;
+    }
+
+    header {
+      flex: 0 0 auto; padding: 11px 22px;
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    }
+    header h1 { font-size: 16px; margin: 0; font-weight: 600; letter-spacing: .3px; }
+    header .hint { font-size: 12px; color: var(--muted); }
+
+    .layout {
+      flex: 1 1 auto;
+      display: grid;
+      grid-template-columns: minmax(340px, 380px) minmax(0, 1fr);
+      grid-template-rows: minmax(0, 1fr);
+      min-height: 0;
+    }
+    .column { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+    .column.left { border-right: 1px solid var(--border); }
+
+    .col-head {
+      flex: 0 0 auto; padding: 9px 16px;
+      font-size: 12px; font-weight: 600; color: var(--muted); letter-spacing: .5px;
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 10px; border-bottom: 1px solid var(--border);
+    }
+    .col-head .actions { display: flex; gap: 6px; }
+
+    .scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; }
+
+    button {
+      font: inherit; font-size: 12px; padding: 6px 12px;
+      border-radius: 7px; border: 1px solid var(--border);
+      background: var(--panel-2); color: var(--text);
+      cursor: pointer; white-space: nowrap;
+      transition: background .15s, border-color .15s, opacity .15s;
+    }
+    button:hover:not(:disabled) { background: #232c39; border-color: #3a4557; }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+    button.primary { background: var(--accent); border-color: var(--accent); color: #062315; font-weight: 600; }
+    button.primary:hover:not(:disabled) { background: var(--accent-2); border-color: var(--accent-2); }
+    button.mini { padding: 4px 9px; font-size: 11px; }
+
+    .drop {
+      flex: 0 0 auto; margin: 8px 14px;
+      border: 2px dashed var(--border); border-radius: var(--radius);
+      padding: 9px 14px; text-align: center; cursor: pointer;
+      transition: border-color .2s, background-color .2s;
+    }
+    .drop:hover, .drop.dragover { border-color: var(--accent); background: rgba(61, 214, 140, .06); }
+    .drop .inner { display: flex; align-items: center; gap: 10px; text-align: left; }
+    .drop .icon { font-size: 19px; line-height: 1; flex: 0 0 auto; }
+    .drop .text { color: var(--muted); font-size: 11px; line-height: 1.35; }
+    .drop .text b { color: var(--text); }
+    .drop input[type="file"] { display: none; }
+
+    .panel { padding: 0 14px 4px; }
+    .group + .group { margin-top: 5px; }
+    .group-title {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 8px; font-size: 11px; font-weight: 600; color: var(--muted);
+      letter-spacing: .4px; margin-bottom: 6px;
+    }
+    .group-title small { color: var(--muted); font-weight: 400; margin-left: 5px; }
+
+    .seg { display: grid; gap: 6px; }
+    .seg.c3 { grid-template-columns: repeat(3, 1fr); }
+    .seg button { padding: 5px 2px; font-size: 11.5px; }
+
+    .slider-row { display: flex; align-items: center; gap: 9px; margin-top: 7px; }
+    input[type="range"] {
+      flex: 1 1 auto; min-width: 0; height: 4px;
+      -webkit-appearance: none; appearance: none;
+      background: var(--border); border-radius: 3px; outline: none;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none; appearance: none;
+      width: 14px; height: 14px; border-radius: 50%;
+      background: var(--accent); cursor: pointer; border: none;
+    }
+    input[type="range"]::-moz-range-thumb {
+      width: 14px; height: 14px; border-radius: 50%;
+      background: var(--accent); cursor: pointer; border: none;
+    }
+    .slider-val {
+      flex: 0 0 auto; min-width: 56px; text-align: right;
+      font-family: var(--mono); font-size: 11px; color: var(--text);
+    }
+
+    select {
+      font: inherit; font-size: 11.5px;
+      background: var(--panel-2); color: var(--text);
+      border: 1px solid var(--border); border-radius: 7px;
+      padding: 5px 8px; cursor: pointer; width: 100%;
+    }
+
+    input[type="number"] {
+      font: inherit; font-size: 11.5px; width: 100%; min-width: 0;
+      background: var(--panel-2); color: var(--text);
+      border: 1px solid var(--border); border-radius: 7px;
+      padding: 5px 8px; text-align: center;
+      font-family: var(--mono);
+    }
+    .row { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; margin-top: 6px; }
+    .row label { font-size: 11.5px; color: var(--muted); }
+
+    .vinfo {
+      display: grid; grid-template-columns: auto 1fr; gap: 3px 10px;
+      font-size: 11px; font-family: var(--mono);
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: 8px; padding: 8px 10px;
+    }
+    .vinfo .k { color: var(--muted); }
+    .vinfo .v { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .vinfo .v.name { grid-column: 1 / -1; color: var(--text); font-family: var(--sans); }
+
+    .hint-line { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--muted); }
+    .hint-line b { color: var(--text); font-weight: 600; }
+    .hint-line.ok { color: var(--accent); }
+    .hint-line.warn { color: var(--warn); }
+
+    .actions-stack { display: flex; flex-direction: column; gap: 7px; }
+    .actions-stack button { width: 100%; padding: 9px; font-size: 12.5px; }
+
+    /* ---- 右列 ---- */
+    .preview { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; padding: 16px; }
+    .pv-top { flex: 0 0 auto; }
+    .pv-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; margin-top: 12px; padding-right: 2px; }
+
+    .empty {
+      height: 200px; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 8px;
+      color: var(--muted); font-size: 12.5px; text-align: center; padding: 20px;
+    }
+    .empty .big { font-size: 38px; line-height: 1; opacity: .5; }
+
+    .stage {
+      height: clamp(220px, 42vh, 460px);
+      background-image:
+        linear-gradient(45deg, #222a36 25%, transparent 25%, transparent 75%, #222a36 75%),
+        linear-gradient(45deg, #222a36 25%, transparent 25%, transparent 75%, #222a36 75%);
+      background-size: 12px 12px;
+      background-position: 0 0, 6px 6px;
+      background-color: #161b22;
+      border: 1px solid var(--border); border-radius: 9px;
+      display: flex; align-items: center; justify-content: center; overflow: hidden;
+    }
+    .stage canvas { max-width: 100%; max-height: 100%; display: block; }
+
+    .meta {
+      display: flex; gap: 18px; flex-wrap: wrap; margin-top: 9px;
+      font-family: var(--mono); font-size: 11px; color: var(--muted);
+    }
+    .meta .k { color: var(--muted); }
+    .meta .v { color: var(--text); margin-left: 5px; }
+    .meta .v.hl { color: var(--accent); font-weight: 600; }
+
+    /* 缩略图条：整段视频的概览，点一下就能跳过去 */
+    .strip { display: flex; gap: 6px; flex-wrap: wrap; }
+    .tchip {
+      position: relative; width: 78px; border-radius: 6px; overflow: hidden;
+      border: 1px solid var(--border); background: #161b22;
+      cursor: pointer; padding: 0;
+      transition: border-color .12s;
+    }
+    .tchip:hover { border-color: #3a4557; }
+    .tchip.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+    .tchip canvas { display: block; width: 100%; height: 44px; object-fit: cover; }
+    .tchip .t {
+      position: absolute; left: 0; right: 0; bottom: 0;
+      font-family: var(--mono); font-size: 9px; text-align: center;
+      background: rgba(0,0,0,.65); color: #cfd6e0; padding: 1px 0;
+    }
+
+    .progress { height: 3px; background: var(--panel-2); border-radius: 2px; overflow: hidden; margin-top: 9px; }
+    .progress i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .15s; }
+
+    footer {
+      flex: 0 0 auto; padding: 9px 20px;
+      border-top: 1px solid var(--border);
+      font-size: 12px; color: var(--muted);
+      display: flex; align-items: center; gap: 8px;
+    }
+    footer .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); flex: 0 0 auto; }
+
+    ::-webkit-scrollbar { width: 9px; height: 9px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #2c3542; border-radius: 5px; }
+    ::-webkit-scrollbar-thumb:hover { background: #3a4557; }
+
+    @media (max-width: 820px) {
+      html, body { height: auto; }
+      body { overflow: visible; }
+      .layout { grid-template-columns: 1fr; grid-template-rows: auto auto; }
+      .column.left { border-right: none; border-bottom: 1px solid var(--border); flex: 0 0 auto; }
+      .scroll { overflow: visible; }
+      .preview { min-height: 0; }
+      .empty { height: 160px; }
+      .col-head { flex-wrap: wrap; padding: 9px 12px; }
+      header { padding: 11px 14px; }
+      header h1 { font-size: 15px; }
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>视频抽帧</h1>
+    <span class="hint">按时间定位、逐帧微调后导出原始分辨率画面 · 纯前端处理，视频不上传</span>
+  </header>
+
+  <div class="layout">
+
+    <!-- ============ 左列 ============ -->
+    <section class="column left">
+      <div class="drop" id="drop">
+        <div class="inner">
+          <div class="icon">🎬</div>
+          <div class="text"><b>点击选择视频</b>，或拖拽到这里<br />支持浏览器能解码的 MP4 / WebM / MOV</div>
+        </div>
+        <input type="file" id="fileInput" accept="video/*" />
+      </div>
+
+      <div class="scroll">
+        <div class="panel">
+
+          <div class="group" id="infoGroup" hidden>
+            <div class="group-title"><span>视频信息</span></div>
+            <div class="vinfo">
+              <span class="k">文件</span><span class="v name" id="vName">—</span>
+              <span class="k">时长</span><span class="v" id="vDur">—</span>
+              <span class="k">分辨率</span><span class="v" id="vRes">—</span>
+            </div>
+          </div>
+
+          <div class="group">
+            <div class="group-title"><span>定位<small>左右方向键可逐帧移动</small></span></div>
+
+            <div class="row">
+              <label for="fpsSel">逐帧步长</label>
+              <select id="fpsSel">
+                <option value="24">按 24 fps 步进</option>
+                <option value="25">按 25 fps 步进</option>
+                <option value="30" selected>按 30 fps 步进</option>
+                <option value="50">按 50 fps 步进</option>
+                <option value="60">按 60 fps 步进</option>
+              </select>
+            </div>
+            <div class="hint-line" id="fpsHint"></div>
+
+            <div class="row">
+              <label for="timeIn">时间(秒)</label>
+              <input type="number" id="timeIn" min="0" step="0.001" value="0" />
+              <button type="button" id="goTime" style="grid-column:2">跳转</button>
+            </div>
+
+            <div class="seg c3" style="margin-top:6px">
+              <button type="button" id="prevFrame">◀ 上一帧</button>
+              <button type="button" id="toStart">回到开头</button>
+              <button type="button" id="nextFrame">下一帧 ▶</button>
+            </div>
+
+            <div class="slider-row">
+              <input type="range" id="seekRange" min="0" max="1000" step="1" value="0" disabled />
+              <span class="slider-val" id="seekVal">—</span>
+            </div>
+            <div class="hint-line" id="totalLine">选择视频后可用</div>
+          </div>
+
+          <div class="group">
+            <div class="group-title"><span>导出格式</span></div>
+            <select id="fmtSel">
+              <option value="image/png" selected>PNG（无损，体积大）</option>
+              <option value="image/jpeg">JPEG（有损，体积小）</option>
+              <option value="image/webp">WebP（有损，体积小）</option>
+            </select>
+            <div class="slider-row" id="qualityRow" style="display:none">
+              <input type="range" id="qualityRange" min="50" max="100" step="5" value="92" />
+              <span class="slider-val" id="qualityVal">92%</span>
+            </div>
+          </div>
+
+          <div class="group">
+            <div class="group-title"><span>导出</span></div>
+            <div class="actions-stack">
+              <button type="button" class="primary" id="dlBtn" disabled>下载当前帧</button>
+            </div>
+            <div class="progress" id="progWrap" style="display:none"><i id="progBar"></i></div>
+            <div class="hint-line" id="statusLine"></div>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 右列 ============ -->
+    <section class="column right">
+      <div class="col-head">
+        <span>当前帧</span>
+        <div class="actions">
+          <button type="button" class="mini" id="clearBtn" disabled>清空</button>
+        </div>
+      </div>
+
+      <div class="preview">
+        <div class="pv-top">
+          <div class="empty" id="empty">
+            <div class="big">🎞</div>
+            <div>选择一个视频文件开始</div>
+            <div style="font-size:11.5px;color:var(--muted)">抽出的帧是视频的原始分辨率，不会缩放</div>
+          </div>
+
+          <div class="stage" id="stage" hidden><canvas id="frameCanvas"></canvas></div>
+          <div class="meta" id="metaRow" hidden>
+            <span><span class="k">时间</span><span class="v hl" id="mTime">—</span></span>
+            <span><span class="k">分辨率</span><span class="v" id="mSize">—</span></span>
+            <span><span class="k">已用时间</span><span class="v" id="mDur">—</span></span>
+          </div>
+        </div>
+
+        <div class="pv-list">
+          <div class="group-title" id="stripTitle" hidden>
+            <span>整段概览<small>点任意一格跳到该位置</small></span>
+          </div>
+          <div class="strip" id="strip"></div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <footer>
+    <span class="dot"></span><span id="statusText">等待选择视频…</span>
+  </footer>
+
+  <!-- 解码用元素。抽帧只把画面画进 canvas，不需要把它显示出来 -->
+  <video id="vid" muted playsinline preload="auto" style="display:none"></video>
+
+<script>
+(function () {
+  "use strict";
+
+  /* =========================================================
+     关于「逐帧步长」
+     ------------------------------------------------------------
+     浏览器没有可靠接口能读出视频的真实帧率：
+       requestVideoFrameCallback 依赖页面渲染，标签页不可见时不触发；
+       webkitDecodedFrameCount 是累计解码计数（实测在 t=0 就报 4、
+       t=2.5 报 200，而视频总共才 90 帧），并非帧下标。
+     帧率其实是存在 MP4 容器里的（mdhd 的 timescale、stts 的采样间隔），
+     浏览器解析了但不暴露给 JS。
+
+     所以这里不做帧号定位，只把帧率当作「每按一次前进多少时间」用：
+     步长 = 1 / 帧率。这样即使填错也只影响步进大小——画面始终是
+     seek 到的真实时刻，不会像按帧号那样出现「标签说有 N 帧、
+     实际给的是 N-1 帧」的骗人情况。
+     ========================================================= */
+
+  var THUMB_MAX = 48;      // 概览条最多多少格
+  var THUMB_W = 156;       // 概览缩略图绘制宽度
+  var THUMB_STEP = 0.25;   // 概览的目标取样间隔（秒）
+  var MIN_GAP = 0.001;     // 相邻时间点的最小间隔（秒）
+
+  // ---- DOM ----
+  var video   = document.getElementById("vid");
+  var drop    = document.getElementById("drop");
+  var fileInput = document.getElementById("fileInput");
+  var stage   = document.getElementById("stage");
+  var canvas  = document.getElementById("frameCanvas");
+  var strip   = document.getElementById("strip");
+  var stripTitle = document.getElementById("stripTitle");
+  var emptyEl = document.getElementById("empty");
+  var metaRow = document.getElementById("metaRow");
+  var statusText = document.getElementById("statusText");
+  var statusLine = document.getElementById("statusLine");
+  var progWrap = document.getElementById("progWrap");
+  var progBar  = document.getElementById("progBar");
+  var dlBtn   = document.getElementById("dlBtn");
+  var clearBtn = document.getElementById("clearBtn");
+  var fmtSel  = document.getElementById("fmtSel");
+  var qualityRow = document.getElementById("qualityRow");
+  var qualityRange = document.getElementById("qualityRange");
+  var qualityVal = document.getElementById("qualityVal");
+  var fpsSel  = document.getElementById("fpsSel");
+  var fpsHint = document.getElementById("fpsHint");
+  var timeIn  = document.getElementById("timeIn");
+  var seekRange = document.getElementById("seekRange");
+  var seekVal = document.getElementById("seekVal");
+  var totalLine = document.getElementById("totalLine");
+
+  var ctx = canvas.getContext("2d");
+
+  // ---- 状态 ----
+  var vidURL = null, vidName = "", baseName = "", vidDur = 0, vidW = 0, vidH = 0;
+  var fps = 30;
+  var curT = 0;          // video.currentTime 实际值
+  var thumbs = [];       // { t, canvas, el }
+  var busy = false;
+  var loading = false;
+
+  // ---- 工具 ----
+  function $(id) { return document.getElementById(id); }
+
+  function setStatus(t) { statusText.textContent = t; }
+
+  function fmtTime(s) {
+    if (!isFinite(s) || s < 0) return "—";
+    return s.toFixed(3) + " s";
+  }
+
+  function fmtDur(s) {
+    if (!isFinite(s) || s < 0) return "—";
+    var m = Math.floor(s / 60), r = s - m * 60;
+    return m > 0 ? (m + " 分 " + r.toFixed(1) + " 秒") : (r.toFixed(2) + " 秒");
+  }
+
+  function clampT(t) {
+    // 末帧往后取会落空，钳到最后一帧的时间上
+    var last = Math.max(0, vidDur - MIN_GAP);
+    return Math.min(Math.max(0, t), last);
+  }
+
+  // 只用 setTimeout 让出主线程：标签页不渲染时 rAF 会被节流甚至不触发
+  function yieldUI() { return new Promise(function (r) { setTimeout(r, 0); }); }
+
+  function waitEvent(el, ev, ms) {
+    return new Promise(function (res, rej) {
+      var t = setTimeout(function () {
+        cleanup();
+        rej(new Error("等待 " + ev + " 超时"));
+      }, ms || 15000);
+      function ok() { cleanup(); res(); }
+      function onErr() { cleanup(); rej(new Error("浏览器无法解码该视频")); }
+      function cleanup() {
+        clearTimeout(t);
+        el.removeEventListener(ev, ok);
+        el.removeEventListener("error", onErr);
+      }
+      el.addEventListener(ev, ok);
+      el.addEventListener("error", onErr);
+    });
+  }
+
+  /* =========================================================
+     载入视频
+     ========================================================= */
+  function loadVideo(file) {
+    resetAll();
+    vidName = file.name;
+    baseName = (file.name.replace(/\.[^.]+$/, "") || "video") + "-frame";
+    vidURL = URL.createObjectURL(file);
+    video.src = vidURL;
+    video.load();
+
+    setStatus("正在读取视频…");
+    statusLine.className = "hint-line";
+    statusLine.textContent = "解码中…";
+
+    waitEvent(video, "loadedmetadata")
+      .then(function () {
+        // 部分 WebM 的 duration 初值是 Infinity，先 seek 到极大值逼出真实时长
+        if (!isFinite(video.duration)) {
+          return new Promise(function (res) {
+            var done = false;
+            function onDur() {
+              if (done) return;
+              done = true;
+              video.removeEventListener("durationchange", onDur);
+              res();
+            }
+            video.addEventListener("durationchange", onDur);
+            try { video.currentTime = 1e101; } catch (e) { onDur(); }
+            setTimeout(onDur, 1200);
+          }).then(function () { video.currentTime = 0; });
+        }
+      })
+      .then(function () { return waitEvent(video, "loadeddata"); })
+      .then(function () {
+        vidDur = video.duration;
+        vidW = video.videoWidth;
+        vidH = video.videoHeight;
+        if (!vidW || !vidH) throw new Error("没有可用的视频画面");
+        if (!isFinite(vidDur) || vidDur <= 0) throw new Error("无法确定视频时长");
+
+        canvas.width = vidW;
+        canvas.height = vidH;
+
+        $("infoGroup").hidden = false;
+        $("vName").textContent = vidName;
+        $("vName").title = vidName;
+        $("vDur").textContent = fmtDur(vidDur);
+        $("vRes").textContent = vidW + " × " + vidH;
+        $("mSize").textContent = vidW + "×" + vidH;
+        $("mDur").textContent = fmtDur(vidDur);
+
+        seekRange.disabled = false;
+        syncFpsHint();
+
+        stage.hidden = false;
+        emptyEl.style.display = "none";
+        metaRow.hidden = false;
+        clearBtn.disabled = false;
+        dlBtn.disabled = false;
+
+        setStatus("已载入 " + vidName);
+        return gotoTime(0);
+      })
+      .then(function () { return buildStrip(); })
+      .catch(function (e) {
+        statusLine.className = "hint-line warn";
+        statusLine.textContent = "无法读取该视频：" + (e && e.message ? e.message : e);
+        setStatus("视频无法解码");
+        video.removeAttribute("src");
+        video.load();
+      });
+  }
+
+  /* 帧率只决定「每按一次前进多少时间」，并说清楚填错会怎样 */
+  function syncFpsHint() {
+    var step = 1000 / fps;
+    fpsHint.innerHTML = "每按一次前进或后退 <b>" + step.toFixed(1) + " ms</b>。" +
+      (vidDur > 0
+        ? "不确定原视频帧率也没关系：先用下方时间或概览条跳到大致位置，再用方向键微调即可。"
+        : "它只影响步进大小，不影响画面对不对——画面始终是你指定的时刻那一帧。");
+  }
+
+  function resetAll() {
+    thumbs = [];
+    curT = 0;
+    renderStrip();
+    stage.textContent = "";
+    stage.appendChild(canvas);
+    stage.hidden = true;
+    metaRow.hidden = true;
+    emptyEl.style.display = "";
+    dlBtn.disabled = true;
+    clearBtn.disabled = true;
+    seekRange.disabled = true;
+    seekRange.value = 0;
+    seekVal.textContent = "—";
+    if (vidURL) {
+      video.pause();
+      video.removeAttribute("src");
+      video.load();
+    }
+    canvas.width = canvas.height = 0;
+  }
+
+  /* =========================================================
+     定位与绘制
+     ========================================================= */
+  function seekTo(t) {
+    t = clampT(t);
+    if (Math.abs(video.currentTime - t) < 1e-4) return Promise.resolve();
+    return new Promise(function (res, rej) {
+      var timer = setTimeout(function () {
+        video.removeEventListener("seeked", ok);
+        rej(new Error("定位超时"));
+      }, 10000);
+      function ok() { clearTimeout(timer); video.removeEventListener("seeked", ok); res(); }
+      video.addEventListener("seeked", ok);
+      try { video.currentTime = t; } catch (e) {
+        clearTimeout(timer); video.removeEventListener("seeked", ok); rej(e);
+      }
+    });
+  }
+
+  function drawCurrent() {
+    if (!vidW || !vidH) return;
+    ctx.drawImage(video, 0, 0, vidW, vidH);
+  }
+
+  function syncPosition() {
+    seekVal.textContent = fmtTime(curT);
+    seekRange.value = vidDur > 0 ? Math.round((curT / vidDur) * 1000) : 0;
+    timeIn.value = curT.toFixed(3);
+    $("mTime").textContent = fmtTime(curT);
+    highlightThumb();
+  }
+
+  function gotoTime(t, opts) {
+    if (!vidURL || busy || loading) return Promise.resolve();
+    opts = opts || {};
+    var target = clampT(t);
+    if (!opts.silent) setStatus("定位到 " + fmtTime(target));
+    return seekTo(target)
+      .then(function () {
+        curT = video.currentTime;
+        drawCurrent();
+        syncPosition();
+      })
+      .catch(function (e) {
+        statusLine.className = "hint-line warn";
+        statusLine.textContent = "定位失败：" + (e && e.message ? e.message : e);
+      });
+  }
+
+  /* 步进时吸附到帧中心再走，而不是简单地 curT + 1/fps。
+     后者会让时间点正好压在帧边界上，浏览器此时可能仍渲染上一帧，
+     于是连按两次看到的是同一张（实测连点 21 步出现 1 次重复）。
+     吸附到中心后每一步都稳稳落在某一帧内部，不会重复也不会跳。 */
+  function stepFrame(delta) {
+    if (!vidURL) return;
+    var idx = Math.floor(curT * fps);          // 帧中心处 i+0.5，floor 正好还原出下标
+    return gotoTime((idx + delta + 0.5) / fps);
+  }
+
+  /* =========================================================
+     概览条
+     ========================================================= */
+  function buildStrip() {
+    if (!vidURL) return Promise.resolve();
+    loading = true;
+    stripTitle.hidden = false;
+    strip.textContent = "";
+    thumbs = [];
+    progWrap.style.display = "";
+    progBar.style.width = "0%";
+    statusLine.className = "hint-line";
+    statusLine.textContent = "正在生成概览…";
+
+    // 按时间密度取样：大约每 0.25s 一格，再夹在 2..THUMB_MAX 之间。
+    // 不能按帧数算——3 秒视频就有 90 帧，比视频本身还密，什么都看不清。
+    var n = Math.round(vidDur / THUMB_STEP);
+    n = Math.max(2, Math.min(THUMB_MAX, n));
+    var th = Math.max(1, Math.round(vidH * THUMB_W / vidW));
+    var startT = curT;
+
+    var chain = Promise.resolve();
+    for (var i = 0; i < n; i++) (function (i) {
+      chain = chain.then(function () {
+        var t = clampT(vidDur * i / (n - 1));
+        return seekTo(t).then(function () {
+          var c = document.createElement("canvas");
+          c.width = THUMB_W; c.height = th;
+          c.getContext("2d").drawImage(video, 0, 0, THUMB_W, th);
+          thumbs.push({ t: t, canvas: c, el: null });
+          progBar.style.width = ((i + 1) * (100 / n)) + "%";
+          return yieldUI();
+        });
+      });
+    })(i);
+
+    return chain
+      .then(function () {
+        renderStrip();
+        loading = false;
+        // 概览生成过程中画面被来回拨动了，最后回到原处
+        return gotoTime(startT);
+      })
+      .then(function () {
+        statusLine.textContent = "点下方概览可快速跳到大致位置，再用左右方向键或「上一帧 / 下一帧」精修。";
+        setTimeout(function () { progWrap.style.display = "none"; }, 400);
+      })
+      .catch(function (e) {
+        loading = false;
+        statusLine.className = "hint-line warn";
+        statusLine.textContent = "生成概览失败：" + (e && e.message ? e.message : e);
+        progWrap.style.display = "none";
+      });
+  }
+
+  function renderStrip() {
+    strip.textContent = "";
+    stripTitle.hidden = thumbs.length === 0;
+    thumbs.forEach(function (th, i) {
+      var b = document.createElement("button");
+      b.type = "button";
+      b.className = "tchip";
+      b.title = "跳到 " + fmtTime(th.t);
+      b.appendChild(th.canvas);
+      var lbl = document.createElement("span");
+      lbl.className = "t";
+      lbl.textContent = th.t.toFixed(2) + "s";
+      b.appendChild(lbl);
+      b.addEventListener("click", function () { gotoTime(th.t); });
+      strip.appendChild(b);
+      th.el = b;
+    });
+    highlightThumb();
+  }
+
+  // 高亮离当前时间最近的那一格
+  function highlightThumb() {
+    if (!thumbs.length) return;
+    var best = 0, bestD = Infinity;
+    thumbs.forEach(function (th, i) {
+      var d = Math.abs(th.t - curT);
+      if (d < bestD) { bestD = d; best = i; }
+    });
+    thumbs.forEach(function (th, i) {
+      if (th.el) th.el.classList.toggle("on", i === best);
+    });
+  }
+
+  /* =========================================================
+     导出
+     ========================================================= */
+  function download() {
+    if (!vidW || busy) return;
+    var type = fmtSel.value;
+    var q = parseInt(qualityRange.value, 10) / 100;
+
+    canvas.toBlob(function (blob) {
+      if (!blob) {
+        statusLine.className = "hint-line warn";
+        statusLine.textContent = "导出失败：浏览器无法生成该格式";
+        return;
+      }
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement("a");
+      a.href = url;
+      a.download = baseName + "-" + curT.toFixed(3).replace(".", "p") +
+                   (type === "image/jpeg" ? ".jpg" : type === "image/webp" ? ".webp" : ".png");
+      a.click();
+      // 延后回收：img 还在加载时 revoke 会导致 ERR_FILE_NOT_FOUND
+      setTimeout(function () { URL.revokeObjectURL(url); }, 3000);
+      statusLine.className = "hint-line ok";
+      statusLine.textContent = "已导出 " + a.download + "（" + humanSize(blob.size) + "）";
+      setStatus("已下载 " + fmtTime(curT) + " 处的画面");
+    }, type, type === "image/png" ? undefined : q);
+  }
+
+  function humanSize(n) {
+    if (n < 1024) return n + " B";
+    if (n < 1048576) return (n / 1024).toFixed(1) + " KB";
+    return (n / 1048576).toFixed(2) + " MB";
+  }
+
+  /* =========================================================
+     事件
+     ========================================================= */
+  drop.addEventListener("click", function () { fileInput.click(); });
+  fileInput.addEventListener("change", function () {
+    var f = fileInput.files && fileInput.files[0];
+    if (f) loadVideo(f);
+  });
+
+  ["dragenter", "dragover"].forEach(function (ev) {
+    drop.addEventListener(ev, function (e) {
+      e.preventDefault(); e.stopPropagation();
+      drop.classList.add("dragover");
+    });
+  });
+  ["dragleave", "drop"].forEach(function (ev) {
+    drop.addEventListener(ev, function (e) {
+      e.preventDefault(); e.stopPropagation();
+      drop.classList.remove("dragover");
+    });
+  });
+  drop.addEventListener("drop", function (e) {
+    var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f) loadVideo(f);
+  });
+
+  document.getElementById("goTime").addEventListener("click", function () {
+    gotoTime(parseFloat(timeIn.value) || 0);
+  });
+  document.getElementById("prevFrame").addEventListener("click", function () { stepFrame(-1); });
+  document.getElementById("nextFrame").addEventListener("click", function () { stepFrame(1); });
+  document.getElementById("toStart").addEventListener("click", function () { gotoTime(0); });
+
+  timeIn.addEventListener("keydown", function (e) {
+    if (e.key === "Enter") { e.preventDefault(); gotoTime(parseFloat(timeIn.value) || 0); }
+  });
+
+  var dragging = false;
+  seekRange.addEventListener("pointerdown", function () { dragging = true; });
+  window.addEventListener("pointerup", function () { dragging = false; });
+  seekRange.addEventListener("input", function () {
+    if (!vidDur || busy || loading) return;
+    if (dragging) gotoTime((parseInt(seekRange.value, 10) / 1000) * vidDur, { silent: true });
+  });
+
+  fpsSel.addEventListener("change", function () {
+    fps = parseInt(fpsSel.value, 10) || 30;
+    syncFpsHint();
+    if (vidURL) setStatus("步长已改为 1/" + fps + " s（" + (1000 / fps).toFixed(1) + " ms）");
+  });
+
+  fmtSel.addEventListener("change", function () {
+    var lossy = fmtSel.value !== "image/png";
+    qualityRow.style.display = lossy ? "" : "none";
+  });
+  qualityRange.addEventListener("input", function () {
+    qualityVal.textContent = qualityRange.value + "%";
+  });
+
+  dlBtn.addEventListener("click", download);
+  clearBtn.addEventListener("click", function () {
+    resetAll();
+    vidURL = null; vidName = ""; baseName = ""; vidDur = 0; vidW = 0; vidH = 0;
+    $("infoGroup").hidden = true;
+    totalLine.textContent = "选择视频后可用";
+    setStatus("已清空");
+  });
+
+  // 方向键逐帧微调；Shift 加速 10 帧
+  document.addEventListener("keydown", function (e) {
+    if (!vidURL || busy || loading) return;
+    var t = e.target;
+    if (t && (t.tagName === "INPUT" || t.tagName === "SELECT" || t.tagName === "TEXTAREA")) return;
+    if (e.key === "ArrowLeft")  { e.preventDefault(); stepFrame(e.shiftKey ? -10 : -1); }
+    if (e.key === "ArrowRight") { e.preventDefault(); stepFrame(e.shiftKey ? 10 : 1); }
+  });
+
+  syncFpsHint();
+  setStatus("等待选择视频…");
+})();
+</script>
+</body>
+</html>
