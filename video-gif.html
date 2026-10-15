@@ -1,0 +1,1156 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>视频转 GIF</title>
+  <style>
+    :root {
+      --bg: #0e1116;
+      --panel: #171c24;
+      --panel-2: #1e2632;
+      --border: #2a3340;
+      --text: #e8edf4;
+      --muted: #8b97a8;
+      --accent: #3dd68c;
+      --accent-2: #2bb673;
+      --warn: #ffb340;
+      --radius: 10px;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+              "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; }
+
+    body {
+      background: var(--bg); color: var(--text);
+      font-family: var(--sans); font-size: 13px;
+      display: flex; flex-direction: column; overflow: hidden;
+    }
+
+    header {
+      flex: 0 0 auto; padding: 11px 22px;
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    }
+    header h1 { font-size: 16px; margin: 0; font-weight: 600; letter-spacing: .3px; }
+    header .hint { font-size: 12px; color: var(--muted); }
+
+    .layout {
+      flex: 1 1 auto;
+      display: grid;
+      grid-template-columns: minmax(340px, 380px) minmax(0, 1fr);
+      grid-template-rows: minmax(0, 1fr);
+      min-height: 0;
+    }
+    .column { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+    .column.left { border-right: 1px solid var(--border); }
+
+    .col-head {
+      flex: 0 0 auto; padding: 9px 16px;
+      font-size: 12px; font-weight: 600; color: var(--muted); letter-spacing: .5px;
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 10px; border-bottom: 1px solid var(--border);
+    }
+    .col-head .actions { display: flex; gap: 6px; }
+
+    .scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; }
+
+    button {
+      font: inherit; font-size: 12px; padding: 6px 12px;
+      border-radius: 7px; border: 1px solid var(--border);
+      background: var(--panel-2); color: var(--text);
+      cursor: pointer; white-space: nowrap;
+      transition: background .15s, border-color .15s, opacity .15s;
+    }
+    button:hover:not(:disabled) { background: #232c39; border-color: #3a4557; }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+    button.primary { background: var(--accent); border-color: var(--accent); color: #062315; font-weight: 600; }
+    button.primary:hover:not(:disabled) { background: var(--accent-2); border-color: var(--accent-2); }
+    button.mini { padding: 4px 9px; font-size: 11px; }
+
+    .drop {
+      flex: 0 0 auto; margin: 8px 14px;
+      border: 2px dashed var(--border); border-radius: var(--radius);
+      padding: 9px 14px; text-align: center; cursor: pointer;
+      transition: border-color .2s, background-color .2s;
+    }
+    .drop:hover, .drop.dragover { border-color: var(--accent); background: rgba(61, 214, 140, .06); }
+    .drop .inner { display: flex; align-items: center; gap: 10px; text-align: left; }
+    .drop .icon { font-size: 19px; line-height: 1; flex: 0 0 auto; }
+    .drop .text { color: var(--muted); font-size: 11px; line-height: 1.35; }
+    .drop .text b { color: var(--text); }
+    .drop input[type="file"] { display: none; }
+
+    .panel { padding: 0 14px 8px; }
+    .group + .group { margin-top: 6px; }
+    .group-title {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 8px; font-size: 11px; font-weight: 600; color: var(--muted);
+      letter-spacing: .4px; margin-bottom: 6px;
+    }
+    .group-title small { color: var(--muted); font-weight: 400; margin-left: 5px; }
+
+    .seg { display: grid; gap: 6px; }
+    .seg.c3 { grid-template-columns: repeat(3, 1fr); }
+    .seg.c4 { grid-template-columns: repeat(4, 1fr); }
+    .seg.c5 { grid-template-columns: repeat(5, 1fr); }
+    .seg button { padding: 5px 2px; font-size: 11.5px; }
+    .seg button.on { background: var(--accent); border-color: var(--accent); color: #062315; font-weight: 600; }
+
+    .slider-row { display: flex; align-items: center; gap: 9px; margin-top: 7px; }
+    input[type="range"] {
+      flex: 1 1 auto; min-width: 0; height: 4px;
+      -webkit-appearance: none; appearance: none;
+      background: var(--border); border-radius: 3px; outline: none;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none; appearance: none;
+      width: 14px; height: 14px; border-radius: 50%;
+      background: var(--accent); cursor: pointer; border: none;
+    }
+    input[type="range"]::-moz-range-thumb {
+      width: 14px; height: 14px; border-radius: 50%;
+      background: var(--accent); cursor: pointer; border: none;
+    }
+    .slider-val {
+      flex: 0 0 auto; min-width: 74px; text-align: right;
+      font-family: var(--mono); font-size: 11px; color: var(--text);
+    }
+
+    select {
+      font: inherit; font-size: 11.5px;
+      background: var(--panel-2); color: var(--text);
+      border: 1px solid var(--border); border-radius: 7px;
+      padding: 5px 8px; cursor: pointer; width: 100%;
+    }
+
+    .row2 { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; }
+    input[type="number"] {
+      font: inherit; font-size: 11.5px; width: 64px;
+      background: var(--panel-2); color: var(--text);
+      border: 1px solid var(--border); border-radius: 7px;
+      padding: 5px 8px; text-align: center;
+    }
+
+    /* 视频信息卡 */
+    .vinfo {
+      display: grid; grid-template-columns: auto 1fr; gap: 3px 10px;
+      font-size: 11px; font-family: var(--mono);
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: 8px; padding: 8px 10px;
+    }
+    .vinfo .k { color: var(--muted); }
+    .vinfo .v { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .vinfo .v.name { grid-column: 1 / -1; color: var(--text); font-family: var(--sans); }
+
+    .hint-line { margin-top: 5px; font-size: 10.5px; line-height: 1.4; color: var(--muted); }
+    .hint-line b { color: var(--text); font-weight: 600; }
+    .hint-line.ok { color: var(--accent); }
+    .hint-line.warn { color: var(--warn); }
+
+    .actions-stack { display: flex; flex-direction: column; gap: 7px; }
+    .actions-stack button { width: 100%; padding: 9px; font-size: 12.5px; }
+
+    /* ---- 右列 ---- */
+    .preview { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; padding: 16px; }
+    .pv-top { flex: 0 0 auto; }
+    .pv-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; margin-top: 12px; padding-right: 2px; }
+
+    .empty {
+      height: 200px; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 8px;
+      color: var(--muted); font-size: 12.5px; text-align: center; padding: 20px;
+    }
+    .empty .big { font-size: 38px; line-height: 1; opacity: .5; }
+
+    .stage {
+      height: clamp(220px, 44vh, 480px);
+      background-image:
+        linear-gradient(45deg, #222a36 25%, transparent 25%, transparent 75%, #222a36 75%),
+        linear-gradient(45deg, #222a36 25%, transparent 25%, transparent 75%, #222a36 75%);
+      background-size: 12px 12px;
+      background-position: 0 0, 6px 6px;
+      background-color: #161b22;
+      border: 1px solid var(--border); border-radius: 9px;
+      display: flex; align-items: center; justify-content: center; overflow: hidden;
+    }
+    .stage img { max-width: 100%; max-height: 100%; display: block; }
+    .stage video { max-width: 100%; max-height: 100%; display: block; background: #000; }
+
+    .meta {
+      display: flex; gap: 18px; flex-wrap: wrap; margin-top: 9px;
+      font-family: var(--mono); font-size: 11px; color: var(--muted);
+    }
+    .meta .k { color: var(--muted); }
+    .meta .v { color: var(--text); margin-left: 5px; }
+    .meta .v.hl { color: var(--accent); font-weight: 600; }
+
+    /* 帧条 */
+    .strip { display: flex; gap: 7px; flex-wrap: wrap; }
+    .fchip {
+      position: relative; width: 94px; border-radius: 7px; overflow: hidden;
+      border: 1px solid var(--border); background: #161b22;
+      cursor: grab; touch-action: none;   /* 触屏拖拽时别触发页面滚动 */
+      user-select: none; -webkit-user-select: none;
+    }
+    .fchip:hover { border-color: #3a4557; }
+    /* 拖拽时的占位卡：留出空位，让其它卡的移位看得见 */
+    .fchip.ghost {
+      opacity: .28;
+      border-style: dashed; border-color: var(--accent);
+    }
+    .fchip canvas { display: block; width: 100%; height: 66px; object-fit: cover; }
+    /* canvas 若可被浏览器原生拖拽，会接管指针事件导致自绘排序失效 */
+    .fchip canvas { -webkit-user-drag: none; user-drag: none; }
+    .fchip .no {
+      position: absolute; left: 3px; top: 3px;
+      font-family: var(--mono); font-size: 9.5px;
+      background: rgba(0,0,0,.6); color: #fff;
+      padding: 0 4px; border-radius: 3px;
+    }
+    .fchip .rm {
+      position: absolute; right: 2px; top: 2px;
+      width: 15px; height: 15px; line-height: 13px; text-align: center;
+      font-size: 10px; padding: 0; border-radius: 4px;
+      background: rgba(0,0,0,.6); border: none; color: #fff;
+    }
+    .fchip .rm:hover { background: #ff6b6b; }
+    .fchip .nm {
+      font-size: 9px; color: var(--muted); padding: 2px 3px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center;
+    }
+
+    .progress { height: 3px; background: var(--panel-2); border-radius: 2px; overflow: hidden; margin-top: 9px; }
+    .progress i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .15s; }
+
+    body.dragging { user-select: none; -webkit-user-select: none; cursor: grabbing; }
+    body.dragging .fchip { cursor: grabbing; }
+
+    footer {
+      flex: 0 0 auto; padding: 9px 20px;
+      border-top: 1px solid var(--border);
+      font-size: 12px; color: var(--muted);
+      display: flex; align-items: center; gap: 8px;
+    }
+    footer .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); flex: 0 0 auto; }
+
+    ::-webkit-scrollbar { width: 9px; height: 9px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #2c3542; border-radius: 5px; }
+    ::-webkit-scrollbar-thumb:hover { background: #3a4557; }
+
+    @media (max-width: 820px) {
+      html, body { height: auto; }
+      body { overflow: visible; }
+      .layout { grid-template-columns: 1fr; grid-template-rows: auto auto; }
+      .column.left { border-right: none; border-bottom: 1px solid var(--border); flex: 0 0 auto; }
+      .scroll { overflow: visible; }
+      .preview { min-height: 0; }
+      .empty { height: 160px; }
+      .col-head { flex-wrap: wrap; padding: 9px 12px; }
+      header h1 { font-size: 15px; }
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>视频转 GIF</h1>
+    <span class="hint">按时间点逐帧抽取再合成 · 全程在浏览器内完成，视频不上传</span>
+  </header>
+
+  <div class="layout">
+
+    <!-- ============ 左列 ============ -->
+    <section class="column left">
+      <div class="drop" id="drop">
+        <div class="inner">
+          <div class="icon">🎬</div>
+          <div class="text"><b>点击选择视频</b>，或拖拽到这里<br />支持浏览器能解码的 MP4 / WebM / MOV</div>
+        </div>
+        <input type="file" id="fileInput" accept="video/*" />
+      </div>
+
+      <div class="scroll">
+        <div class="panel">
+
+          <div class="group" id="infoGroup" hidden>
+            <div class="group-title"><span>视频信息</span></div>
+            <div class="vinfo">
+              <span class="k">文件</span><span class="v name" id="vName">—</span>
+              <span class="k">时长</span><span class="v" id="vDur">—</span>
+              <span class="k">分辨率</span><span class="v" id="vRes">—</span>
+            </div>
+          </div>
+
+          <div class="group">
+            <div class="group-title"><span>帧间隔<small>越小越流畅，帧数也越多</small></span><span id="durTotal" style="color:var(--muted);font-weight:400"></span></div>
+            <div class="seg c4" id="durPresets">
+              <button type="button" data-dur="50">0.05s</button>
+              <button type="button" data-dur="100" class="on">0.1s</button>
+              <button type="button" data-dur="150">0.15s</button>
+              <button type="button" data-dur="200">0.2s</button>
+              <button type="button" data-dur="300">0.3s</button>
+              <button type="button" data-dur="500">0.5s</button>
+              <button type="button" data-dur="1000">1s</button>
+              <button type="button" data-dur="custom">自定义</button>
+            </div>
+            <div class="slider-row">
+              <input type="range" id="durRange" min="20" max="2000" step="10" value="100" />
+              <span class="slider-val" id="durVal">100 ms</span>
+            </div>
+            <div class="hint-line" id="countLine">选择视频后显示预计帧数</div>
+          </div>
+
+          <div class="group">
+            <div class="group-title"><span>循环</span></div>
+            <div class="seg c3" id="loopSeg">
+              <button type="button" data-loop="0" class="on">无限循环</button>
+              <button type="button" data-loop="-1">播放一次</button>
+              <button type="button" data-loop="n">指定次数</button>
+            </div>
+            <div class="row2" id="loopRow" style="display:none;margin-top:7px">
+              <span class="hint-line" style="margin:0">重复播放</span>
+              <input type="number" id="loopN" min="1" max="999" value="3" />
+              <span style="font-size:11px;color:var(--muted)">次</span>
+            </div>
+          </div>
+
+          <div class="group">
+            <div class="group-title"><span>尺寸<small>缩小是最有效的减重手段</small></span></div>
+            <select id="sizeSel">
+              <option value="0">保持原始尺寸</option>
+              <option value="1280">最长边 1280</option>
+              <option value="960">最长边 960</option>
+              <option value="800">最长边 800</option>
+              <option value="640">最长边 640</option>
+              <option value="480" selected>最长边 480</option>
+              <option value="400">最长边 400</option>
+              <option value="320">最长边 320</option>
+              <option value="240">最长边 240</option>
+              <option value="160">最长边 160</option>
+            </select>
+          </div>
+
+          <div class="group">
+            <div class="group-title"><span>颜色数<small>GIF 上限 256</small></span></div>
+            <div class="seg c5" id="colorSeg">
+              <button type="button" data-color="16">16</button>
+              <button type="button" data-color="32">32</button>
+              <button type="button" data-color="64">64</button>
+              <button type="button" data-color="128">128</button>
+              <button type="button" data-color="256" class="on">256</button>
+            </div>
+            <div class="hint-line">已用<b>全局调色板</b>：所有帧共用一份颜色表，避免逐帧变色造成的闪烁。</div>
+          </div>
+
+          <div class="group">
+            <div class="group-title"><span>导出</span></div>
+            <div class="actions-stack">
+              <button type="button" class="primary" id="grabBtn" disabled>抽取帧</button>
+              <button type="button" id="makeBtn" disabled>生成 GIF</button>
+              <button type="button" id="dlBtn" disabled>下载 .gif</button>
+            </div>
+            <div class="progress" id="progWrap" style="display:none"><i id="progBar"></i></div>
+            <div class="hint-line" id="statusLine"></div>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 右列 ============ -->
+    <section class="column right">
+      <div class="col-head">
+        <span id="pvTitle">预览</span>
+        <div class="actions">
+          <button type="button" class="mini" id="clearBtn" disabled>清空</button>
+        </div>
+      </div>
+
+      <div class="preview" id="preview">
+        <div class="pv-top">
+          <div class="empty" id="empty">
+            <div class="big">🎬</div>
+            <div>选择一个视频文件开始</div>
+            <div style="font-size:11.5px;color:var(--muted)">视频不会被上传，所有解码都在本地完成</div>
+          </div>
+
+          <div class="stage" id="stage" hidden></div>
+          <div class="meta" id="metaRow" hidden>
+            <span><span class="k">帧数</span><span class="v" id="mFrames">—</span></span>
+            <span><span class="k">尺寸</span><span class="v" id="mSize">—</span></span>
+            <span><span class="k">时长</span><span class="v" id="mDur">—</span></span>
+            <span><span class="k">体积</span><span class="v hl" id="mBytes">—</span></span>
+          </div>
+          <div class="hint-line" id="resultHint"></div>
+        </div>
+
+        <div class="pv-list" id="listWrap">
+          <div class="group-title" id="stripTitle" hidden><span>帧顺序<small>可拖拽调整，点 ✕ 移除</small></span></div>
+          <div class="strip" id="strip"></div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <footer>
+    <span class="dot"></span><span id="statusText">等待选择视频…</span>
+  </footer>
+
+  <!-- 抽帧用的解码元素。默认藏在页脚之后，载入后会被移进 .stage 显示。 -->
+  <video id="vid" muted playsinline preload="auto" hidden></video>
+
+<script>
+/* gifenc v1.0.3 | MIT | https://github.com/mattdesl/gifenc
+   已 vendor 进本文件，未改动其编码逻辑。 */
+var GifEnc = (function () {
+var X={signature:"GIF",version:"89a",trailer:59,extensionIntroducer:33,applicationExtensionLabel:255,graphicControlExtensionLabel:249,imageSeparator:44,signatureSize:3,versionSize:3,globalColorTableFlagMask:128,colorResolutionMask:112,sortFlagMask:8,globalColorTableSizeMask:7,applicationIdentifierSize:8,applicationAuthCodeSize:3,disposalMethodMask:28,userInputFlagMask:2,transparentColorFlagMask:1,localColorTableFlagMask:128,interlaceFlagMask:64,idSortFlagMask:32,localColorTableSizeMask:7};function F(t=256){let e=0,s=new Uint8Array(t);return{get buffer(){return s.buffer},reset(){e=0},bytesView(){return s.subarray(0,e)},bytes(){return s.slice(0,e)},writeByte(r){n(e+1),s[e]=r,e++},writeBytes(r,o=0,i=r.length){n(e+i);for(let c=0;c<i;c++)s[e++]=r[c+o]},writeBytesView(r,o=0,i=r.byteLength){n(e+i),s.set(r.subarray(o,o+i),e),e+=i}};function n(r){var o=s.length;if(o>=r)return;var i=1024*1024;r=Math.max(r,o*(o<i?2:1.125)>>>0),o!=0&&(r=Math.max(r,256));let c=s;s=new Uint8Array(r),e>0&&s.set(c.subarray(0,e),0)}}var O=12,J=5003,lt=[0,1,3,7,15,31,63,127,255,511,1023,2047,4095,8191,16383,32767,65535];function at(t,e,s,n,r=F(512),o=new Uint8Array(256),i=new Int32Array(J),c=new Int32Array(J)){let x=i.length,a=Math.max(2,n);o.fill(0),c.fill(0),i.fill(-1);let l=0,f=0,g=a+1,h=g,b=!1,w=h,_=(1<<w)-1,u=1<<g-1,k=u+1,B=u+2,p=0,A=s[0],z=0;for(let y=x;y<65536;y*=2)++z;z=8-z,r.writeByte(a),I(u);let d=s.length;for(let y=1;y<d;y++){t:{let m=s[y],v=(m<<O)+A,M=m<<z^A;if(i[M]===v){A=c[M];break t}let V=M===0?1:x-M;for(;i[M]>=0;)if(M-=V,M<0&&(M+=x),i[M]===v){A=c[M];break t}I(A),A=m,B<1<<O?(c[M]=B++,i[M]=v):(i.fill(-1),B=u+2,b=!0,I(u))}}return I(A),I(k),r.writeByte(0),r.bytesView();function I(y){for(l&=lt[f],f>0?l|=y<<f:l=y,f+=w;f>=8;)o[p++]=l&255,p>=254&&(r.writeByte(p),r.writeBytesView(o,0,p),p=0),l>>=8,f-=8;if((B>_||b)&&(b?(w=h,_=(1<<w)-1,b=!1):(++w,_=w===O?1<<w:(1<<w)-1)),y==k){for(;f>0;)o[p++]=l&255,p>=254&&(r.writeByte(p),r.writeBytesView(o,0,p),p=0),l>>=8,f-=8;p>0&&(r.writeByte(p),r.writeBytesView(o,0,p),p=0)}}}var $=at;function D(t,e,s){return t<<8&63488|e<<2&992|s>>3}function G(t,e,s,n){return t>>4|e&240|(s&240)<<4|(n&240)<<8}function j(t,e,s){return t>>4<<8|e&240|s>>4}function R(t,e,s){return t<e?e:t>s?s:t}function T(t){return t*t}function tt(t,e,s){var n=0,r=1e100;let o=t[e],i=o.cnt,c=o.ac,x=o.rc,a=o.gc,l=o.bc;for(var f=o.fw;f!=0;f=t[f].fw){let h=t[f],b=h.cnt,w=i*b/(i+b);if(!(w>=r)){var g=0;s&&(g+=w*T(h.ac-c),g>=r)||(g+=w*T(h.rc-x),!(g>=r)&&(g+=w*T(h.gc-a),!(g>=r)&&(g+=w*T(h.bc-l),!(g>=r)&&(r=g,n=f))))}}o.err=r,o.nn=n}function Q(){return{ac:0,rc:0,gc:0,bc:0,cnt:0,nn:0,fw:0,bk:0,tm:0,mtm:0,err:0}}function ut(t,e){let s=e==="rgb444"?4096:65536,n=new Array(s),r=t.length;if(e==="rgba4444")for(let o=0;o<r;++o){let i=t[o],c=i>>24&255,x=i>>16&255,a=i>>8&255,l=i&255,f=G(l,a,x,c),g=f in n?n[f]:n[f]=Q();g.rc+=l,g.gc+=a,g.bc+=x,g.ac+=c,g.cnt++}else if(e==="rgb444")for(let o=0;o<r;++o){let i=t[o],c=i>>16&255,x=i>>8&255,a=i&255,l=j(a,x,c),f=l in n?n[l]:n[l]=Q();f.rc+=a,f.gc+=x,f.bc+=c,f.cnt++}else for(let o=0;o<r;++o){let i=t[o],c=i>>16&255,x=i>>8&255,a=i&255,l=D(a,x,c),f=l in n?n[l]:n[l]=Q();f.rc+=a,f.gc+=x,f.bc+=c,f.cnt++}return n}function H(t,e,s={}){let{format:n="rgb565",clearAlpha:r=!0,clearAlphaColor:o=0,clearAlphaThreshold:i=0,oneBitAlpha:c=!1}=s;if(!t||!t.buffer)throw new Error("quantize() expected RGBA Uint8Array data");if(!(t instanceof Uint8Array)&&!(t instanceof Uint8ClampedArray))throw new Error("quantize() expected RGBA Uint8Array data");let x=new Uint32Array(t.buffer),a=s.useSqrt!==!1,l=n==="rgba4444",f=ut(x,n),g=f.length,h=g-1,b=new Uint32Array(g+1);for(var w=0,u=0;u<g;++u){let C=f[u];if(C!=null){var _=1/C.cnt;l&&(C.ac*=_),C.rc*=_,C.gc*=_,C.bc*=_,f[w++]=C}}T(e)/w<.022&&(a=!1);for(var u=0;u<w-1;++u)f[u].fw=u+1,f[u+1].bk=u,a&&(f[u].cnt=Math.sqrt(f[u].cnt));a&&(f[u].cnt=Math.sqrt(f[u].cnt));var k,B,p;for(u=0;u<w;++u){tt(f,u,!1);var A=f[u].err;for(B=++b[0];B>1&&(p=B>>1,!(f[k=b[p]].err<=A));B=p)b[B]=k;b[B]=u}var z=w-e;for(u=0;u<z;){for(var d;;){var I=b[1];if(d=f[I],d.tm>=d.mtm&&f[d.nn].mtm<=d.tm)break;d.mtm==h?I=b[1]=b[b[0]--]:(tt(f,I,!1),d.tm=u);var A=f[I].err;for(B=1;(p=B+B)<=b[0]&&(p<b[0]&&f[b[p]].err>f[b[p+1]].err&&p++,!(A<=f[k=b[p]].err));B=p)b[B]=k;b[B]=I}var y=f[d.nn],m=d.cnt,v=y.cnt,_=1/(m+v);l&&(d.ac=_*(m*d.ac+v*y.ac)),d.rc=_*(m*d.rc+v*y.rc),d.gc=_*(m*d.gc+v*y.gc),d.bc=_*(m*d.bc+v*y.bc),d.cnt+=y.cnt,d.mtm=++u,f[y.bk].fw=y.fw,f[y.fw].bk=y.bk,y.mtm=h}let M=[];var V=0;for(u=0;;++V){let L=R(Math.round(f[u].rc),0,255),C=R(Math.round(f[u].gc),0,255),Y=R(Math.round(f[u].bc),0,255),E=255;if(l){if(E=R(Math.round(f[u].ac),0,255),c){let st=typeof c=="number"?c:127;E=E<=st?0:255}r&&E<=i&&(L=C=Y=o,E=0)}let K=l?[L,C,Y,E]:[L,C,Y];if(xt(M,K)||M.push(K),(u=f[u].fw)==0)break}return M}function xt(t,e){for(let s=0;s<t.length;s++){let n=t[s],r=n[0]===e[0]&&n[1]===e[1]&&n[2]===e[2],o=n.length>=4&&e.length>=4?n[3]===e[3]:!0;if(r&&o)return!0}return!1}function U(t,e){var s=0,n;for(n=0;n<t.length;n++){let r=t[n]-e[n];s+=r*r}return s}function P(t,e){return e>1?Math.round(t/e)*e:t}function et(t,{roundRGB:e=5,roundAlpha:s=10,oneBitAlpha:n=null}={}){let r=new Uint32Array(t.buffer);for(let o=0;o<r.length;o++){let i=r[o],c=i>>24&255,x=i>>16&255,a=i>>8&255,l=i&255;if(c=P(c,s),n){let f=typeof n=="number"?n:127;c=c<=f?0:255}l=P(l,e),a=P(a,e),x=P(x,e),r[o]=c<<24|x<<16|a<<8|l<<0}}function nt(t,e,s="rgb565"){if(!t||!t.buffer)throw new Error("quantize() expected RGBA Uint8Array data");if(!(t instanceof Uint8Array)&&!(t instanceof Uint8ClampedArray))throw new Error("quantize() expected RGBA Uint8Array data");if(e.length>256)throw new Error("applyPalette() only works with 256 colors or less");let n=new Uint32Array(t.buffer),r=n.length,o=s==="rgb444"?4096:65536,i=new Uint8Array(r),c=new Array(o),x=s==="rgba4444";if(s==="rgba4444")for(let a=0;a<r;a++){let l=n[a],f=l>>24&255,g=l>>16&255,h=l>>8&255,b=l&255,w=G(b,h,g,f),_=w in c?c[w]:c[w]=gt(b,h,g,f,e);i[a]=_}else{let a=s==="rgb444"?j:D;for(let l=0;l<r;l++){let f=n[l],g=f>>16&255,h=f>>8&255,b=f&255,w=a(b,h,g),_=w in c?c[w]:c[w]=bt(b,h,g,e);i[l]=_}}return i}function gt(t,e,s,n,r){let o=0,i=1e100;for(let c=0;c<r.length;c++){let x=r[c],a=x[3],l=q(a-n);if(l>i)continue;let f=x[0];if(l+=q(f-t),l>i)continue;let g=x[1];if(l+=q(g-e),l>i)continue;let h=x[2];l+=q(h-s),!(l>i)&&(i=l,o=c)}return o}function bt(t,e,s,n){let r=0,o=1e100;for(let i=0;i<n.length;i++){let c=n[i],x=c[0],a=q(x-t);if(a>o)continue;let l=c[1];if(a+=q(l-e),a>o)continue;let f=c[2];a+=q(f-s),!(a>o)&&(o=a,r=i)}return r}function rt(t,e,s=5){if(!t.length||!e.length)return;let n=t.map(i=>i.slice(0,3)),r=s*s,o=t[0].length;for(let i=0;i<e.length;i++){let c=e[i];c.length<o?c=[c[0],c[1],c[2],255]:c.length>o?c=c.slice(0,3):c=c.slice();let x=N(n,c.slice(0,3),U),a=x[0],l=x[1];l>0&&l<=r&&(t[a]=c)}}function q(t){return t*t}function W(t,e,s=U){let n=Infinity,r=-1;for(let o=0;o<t.length;o++){let i=t[o],c=s(e,i);c<n&&(n=c,r=o)}return r}function N(t,e,s=U){let n=Infinity,r=-1;for(let o=0;o<t.length;o++){let i=t[o],c=s(e,i);c<n&&(n=c,r=o)}return[r,n]}function ot(t,e,s=U){return t[W(t,e,s)]}function ct(t={}){let{initialCapacity:e=4096,auto:s=!0}=t,n=F(e),r=5003,o=new Uint8Array(256),i=new Int32Array(r),c=new Int32Array(r),x=!1;return{reset(){n.reset(),x=!1},finish(){n.writeByte(X.trailer)},bytes(){return n.bytes()},bytesView(){return n.bytesView()},get buffer(){return n.buffer},get stream(){return n},writeHeader:a,writeFrame(l,f,g,h={}){let{transparent:b=!1,transparentIndex:w=0,delay:_=0,palette:u=null,repeat:k=0,colorDepth:B=8,dispose:p=-1}=h,A=!1;if(s?x||(A=!0,a(),x=!0):A=Boolean(h.first),f=Math.max(0,Math.floor(f)),g=Math.max(0,Math.floor(g)),A){if(!u)throw new Error("First frame must include a { palette } option");pt(n,f,g,u,B),it(n,u),k>=0&&dt(n,k)}let z=Math.round(_/10);wt(n,p,z,b,w);let d=Boolean(u)&&!A;ht(n,f,g,d?u:null),d&&it(n,u),yt(n,l,f,g,B,o,i,c)}};function a(){ft(n,"GIF89a")}}function wt(t,e,s,n,r){t.writeByte(33),t.writeByte(249),t.writeByte(4),r<0&&(r=0,n=!1);var o,i;n?(o=1,i=2):(o=0,i=0),e>=0&&(i=e&7),i<<=2;let c=0;t.writeByte(0|i|c|o),S(t,s),t.writeByte(r||0),t.writeByte(0)}function pt(t,e,s,n,r=8){let o=1,i=0,c=Z(n.length)-1,x=o<<7|r-1<<4|i<<3|c,a=0,l=0;S(t,e),S(t,s),t.writeBytes([x,a,l])}function dt(t,e){t.writeByte(33),t.writeByte(255),t.writeByte(11),ft(t,"NETSCAPE2.0"),t.writeByte(3),t.writeByte(1),S(t,e),t.writeByte(0)}function it(t,e){let s=1<<Z(e.length);for(let n=0;n<s;n++){let r=[0,0,0];n<e.length&&(r=e[n]),t.writeByte(r[0]),t.writeByte(r[1]),t.writeByte(r[2])}}function ht(t,e,s,n){if(t.writeByte(44),S(t,0),S(t,0),S(t,e),S(t,s),n){let r=0,o=0,i=Z(n.length)-1;t.writeByte(128|r|o|0|i)}else t.writeByte(0)}function yt(t,e,s,n,r=8,o,i,c){$(s,n,e,r,t,o,i,c)}function S(t,e){t.writeByte(e&255),t.writeByte(e>>8&255)}function ft(t,e){for(var s=0;s<e.length;s++)t.writeByte(e.charCodeAt(s))}function Z(t){return Math.max(Math.ceil(Math.log2(t)),1)}var Bt=ct;
+return { GIFEncoder: ct, quantize: H, applyPalette: nt, prequantize: et, nearestColorIndex: W };
+})();
+</script>
+
+<script>
+(function () {
+  "use strict";
+
+  var GIF_LIB = GifEnc;
+
+  /* =========================================================
+     GIF 的两个硬约束
+     1) 每帧只有 256 色。逐帧各自量化的话，静止背景会在帧间
+        轻微变色，看起来像在「呼吸」。所以先把若干帧的采样合并
+        量化出**一份全局调色板**，每帧套用同一张表，首帧写出该表、
+        后续帧不再带表（复用全局色表）。
+     2) 帧延时以 10ms（centisecond）为单位存放，所以滑块按 10ms 步进。
+
+     与「图片转 GIF」的关键差异：**抽帧时就地量化**。
+     每帧只留 1 字节/像素的索引，不再保留 RGBA：
+       800 宽 × 100 帧 —— RGBA 137MB → 索引 10MB。
+     代价是编码阶段几乎不用做像素运算，所以「生成 GIF」是瞬时的，
+     用户也能在编码前先拖拽、删帧。
+     ========================================================= */
+
+  // ---- DOM ----
+  var video   = document.getElementById("vid");
+  var drop    = document.getElementById("drop");
+  var fileInput = document.getElementById("fileInput");
+  var stage   = document.getElementById("stage");
+  var strip   = document.getElementById("strip");
+  var stripTitle = document.getElementById("stripTitle");
+  var emptyEl = document.getElementById("empty");
+  var metaRow = document.getElementById("metaRow");
+  var resultHint = document.getElementById("resultHint");
+  var pvTitle = document.getElementById("pvTitle");
+  var statusText = document.getElementById("statusText");
+  var statusLine = document.getElementById("statusLine");
+  var progWrap = document.getElementById("progWrap");
+  var progBar  = document.getElementById("progBar");
+  var grabBtn = document.getElementById("grabBtn");
+  var makeBtn = document.getElementById("makeBtn");
+  var dlBtn   = document.getElementById("dlBtn");
+  var clearBtn = document.getElementById("clearBtn");
+  var sizeSel = document.getElementById("sizeSel");
+  var durRange = document.getElementById("durRange");
+  var durVal  = document.getElementById("durVal");
+  var durTotal = document.getElementById("durTotal");
+  var countLine = document.getElementById("countLine");
+  var loopN   = document.getElementById("loopN");
+  var loopRow = document.getElementById("loopRow");
+
+  // ---- 状态 ----
+  var MAX_FRAMES = 200;    // 再多体积和耗时不划算
+  var THUMB_W = 160;       // 帧条缩略图宽度（显示 94px，留一倍余量）
+
+  var vidURL = null, vidName = "", vidDur = 0, vidW = 0, vidH = 0;
+  var frames = [];         // { indexed, thumb(Canvas), t }
+  var palette = null;
+  var outW = 0, outH = 0;
+  var gifBlob = null;
+  var gifURL = null;
+  var baseName = "";
+  var delay = 100;         // ms
+  var maxEdge = 480;
+  var colors = 256;
+  var loopMode = "0";
+  var busy = false;
+
+  var work = document.createElement("canvas");
+  var wctx = work.getContext("2d", { willReadFrequently: true });
+
+  // ---- 工具 ----
+  function $(id) { return document.getElementById(id); }
+  function setStatus(t) { statusText.textContent = t; }
+
+  function humanSize(n) {
+    if (n < 1024) return n + " B";
+    if (n < 1048576) return (n / 1024).toFixed(1) + " KB";
+    return (n / 1048576).toFixed(2) + " MB";
+  }
+
+  function fmtDur(s) {
+    if (!isFinite(s) || s < 0) return "—";
+    var m = Math.floor(s / 60), r = s - m * 60;
+    return m > 0 ? (m + " 分 " + r.toFixed(1) + " 秒") : (r.toFixed(2) + " 秒");
+  }
+
+  /* =========================================================
+     载入视频
+     ========================================================= */
+  function loadVideo(file) {
+    if (vidURL) URL.revokeObjectURL(vidURL);
+    resetAll();
+
+    vidName = baseName = file.name.replace(/\.[^.]+$/, "") || "video";
+    vidURL = URL.createObjectURL(file);
+    video.src = vidURL;
+    video.load();
+
+    setStatus("正在读取视频…");
+    statusLine.className = "hint-line";
+    statusLine.textContent = "解码中…";
+
+    waitEvent(video, "loadedmetadata", 15000)
+      .then(function () {
+        // 部分 WebM 的 duration 初值是 Infinity，
+        // 先 seek 到极大值逼浏览器把真实时长算出来。
+        if (!isFinite(video.duration)) {
+          return new Promise(function (res) {
+            var done = false;
+            function onDur() {
+              if (done) return;
+              done = true;
+              video.removeEventListener("durationchange", onDur);
+              res();
+            }
+            video.addEventListener("durationchange", onDur);
+            try { video.currentTime = 1e101; } catch (e) { onDur(); }
+            setTimeout(onDur, 1200);
+          }).then(function () { video.currentTime = 0; });
+        }
+      })
+      // metadata 到了还不一定有帧可画，等到 loadeddata 再操作
+      .then(function () { return waitEvent(video, "loadeddata", 15000); })
+      .then(function () {
+        vidDur = video.duration;
+        vidW = video.videoWidth;
+        vidH = video.videoHeight;
+
+        if (!vidW || !vidH) throw new Error("没有可用的视频画面");
+        if (!isFinite(vidDur) || vidDur <= 0) throw new Error("无法确定视频时长");
+
+        showVideo();
+        fillInfo();
+        syncCount();
+        syncButtons();          // vidURL 是在 resetAll 之后才赋的，必须在这里刷新按钮
+        setStatus("已载入 " + vidName);
+        statusLine.textContent = "按当前设置约需抽取 " + Math.min(plannedCount(), MAX_FRAMES) + " 帧";
+      })
+      .catch(function (e) {
+        var msg = e && e.message ? e.message : String(e);
+        statusLine.className = "hint-line warn";
+        statusLine.textContent = "无法读取该视频：" + msg;
+        setStatus("视频无法解码");
+        video.removeAttribute("src");
+        video.load();
+      });
+  }
+
+  // 等某个媒体事件；同时监听 error —— 不支持的编码格式只会触发 error，
+  // 不会触发 loadedmetadata，否则只能干等超时。
+  function waitEvent(el, ev, ms) {
+    return new Promise(function (res, rej) {
+      var t = setTimeout(function () {
+        cleanup();
+        rej(new Error("等待 " + ev + " 超时，浏览器可能无法解码该格式"));
+      }, ms || 15000);
+      function ok() { cleanup(); res(); }
+      function onErr() {
+        cleanup();
+        rej(new Error("浏览器无法解码该视频，可能是不支持的编码格式"));
+      }
+      function cleanup() {
+        clearTimeout(t);
+        el.removeEventListener(ev, ok);
+        el.removeEventListener("error", onErr);
+      }
+      el.addEventListener(ev, ok);
+      el.addEventListener("error", onErr);
+    });
+  }
+
+  function showVideo() {
+    stage.textContent = "";
+    stage.hidden = false;
+    emptyEl.style.display = "none";
+    metaRow.hidden = true;
+    resultHint.textContent = "";
+    stage.appendChild(video);
+    video.hidden = false;
+    video.controls = true;
+    pvTitle.textContent = "源视频";
+  }
+
+  function fillInfo() {
+    $("infoGroup").hidden = false;
+    $("vName").textContent = vidName;
+    $("vName").title = vidName;
+    $("vDur").textContent = fmtDur(vidDur);
+    $("vRes").textContent = vidW + " × " + vidH;
+  }
+
+  function resetAll() {
+    frames = [];
+    palette = null;
+    outW = outH = 0;
+    if (gifURL) { URL.revokeObjectURL(gifURL); gifURL = null; }
+    gifBlob = null;
+    renderStrip();
+    syncButtons();
+    if (vidURL) {
+      video.pause();
+      video.removeAttribute("src");
+      video.load();
+    }
+    stage.textContent = "";
+    stage.hidden = true;
+    metaRow.hidden = true;
+    resultHint.textContent = "";
+    emptyEl.style.display = "";
+    pvTitle.textContent = "预览";
+  }
+
+  function syncButtons() {
+    grabBtn.disabled = busy || !vidURL;
+    makeBtn.disabled = busy || frames.length < 2;
+    dlBtn.disabled = busy || !gifBlob;
+    clearBtn.disabled = busy || (!vidURL && frames.length === 0);
+  }
+
+  // 帧间隔变化会影响帧数，抽好的帧也就作废了
+  function invalidate(msg) {
+    if (gifBlob) {
+      if (gifURL) { URL.revokeObjectURL(gifURL); gifURL = null; }
+      gifBlob = null;
+      metaRow.hidden = true;
+      resultHint.textContent = "";
+      pvTitle.textContent = vidURL ? "源视频" : "预览";
+      if (vidURL) showVideo();
+    }
+    if (msg) setStatus(msg);
+    syncButtons();
+  }
+
+  /* =========================================================
+     帧数预估
+     ========================================================= */
+  function plannedCount() {
+    if (!vidDur) return 0;
+    var iv = delay / 1000;
+    return Math.max(1, Math.floor((vidDur - 1e-6) / iv) + 1);
+  }
+
+  function syncCount() {
+    var fps = Math.round(1000 / delay);
+    durTotal.textContent = fps > 0 ? fps + " fps" : "";
+    if (!vidDur) {
+      countLine.className = "hint-line";
+      countLine.textContent = "选择视频后显示预计帧数";
+      return;
+    }
+    var n = plannedCount();
+    var over = n > MAX_FRAMES;
+    countLine.className = "hint-line" + (over ? " warn" : "");
+    countLine.innerHTML = over
+      ? "预计 <b>" + n + "</b> 帧，超过上限 " + MAX_FRAMES + " 帧；调大帧间隔可减少帧数，抽取时只取前 " + MAX_FRAMES + " 帧。"
+      : "预计抽取 <b>" + n + "</b> 帧，GIF 时长约 <b>" + (n * delay / 1000).toFixed(1) + "s</b>。";
+  }
+
+  /* =========================================================
+     抽帧
+     ------------------------------------------------------------
+     逐个把 video 定位到目标时间点，drawImage 到离屏 canvas，
+     立刻套全局调色板压成索引字节存下来。
+     ========================================================= */
+  function seekTo(t) {
+    return new Promise(function (res, rej) {
+      if (Math.abs(video.currentTime - t) < 1e-4) return res();
+      var timer = setTimeout(function () {
+        video.removeEventListener("seeked", ok);
+        rej(new Error("定位超时"));
+      }, 10000);
+      function ok() { clearTimeout(timer); video.removeEventListener("seeked", ok); res(); }
+      video.addEventListener("seeked", ok);
+      try { video.currentTime = t; } catch (e) {
+        clearTimeout(timer); video.removeEventListener("seeked", ok); rej(e);
+      }
+    });
+  }
+
+  function targetSize(w, h) {
+    if (!maxEdge) return { w: Math.max(1, w), h: Math.max(1, h) };
+    var k = Math.min(1, maxEdge / Math.max(w, h));
+    return { w: Math.max(1, Math.round(w * k)), h: Math.max(1, Math.round(h * k)) };
+  }
+
+  // 把当前 video 画面画到指定尺寸，铺满不变形，返回 RGBA
+  function raster(tw, th) {
+    work.width = tw; work.height = th;
+    wctx.imageSmoothingEnabled = true;
+    wctx.imageSmoothingQuality = "high";
+    wctx.fillStyle = "#ffffff";          // GIF 没有半透明，透明区铺白
+    wctx.fillRect(0, 0, tw, th);
+    var sw = vidW, sh = vidH;
+    var k = Math.max(tw / sw, th / sh);  // cover
+    var dw = sw * k, dh = sh * k;
+    wctx.drawImage(video, (tw - dw) / 2, (th - dh) / 2, dw, dh);
+    return wctx.getImageData(0, 0, tw, th);
+  }
+
+  function grab() {
+    if (busy || !vidURL) return;
+    busy = true;
+    syncButtons();
+    frames = [];
+    renderStrip();
+    invalidate();
+    progWrap.style.display = "";
+    progBar.style.width = "0%";
+    statusLine.className = "hint-line";
+    setStatus("正在抽取帧…");
+
+    var iv = delay / 1000;
+    var total = Math.min(plannedCount(), MAX_FRAMES);
+    var t0 = targetSize(vidW, vidH);
+    outW = t0.w; outH = t0.h;
+    var thH = Math.max(1, Math.round(outH * THUMB_W / outW));
+    var thumbCanvas = document.createElement("canvas");
+    thumbCanvas.width = THUMB_W; thumbCanvas.height = thH;
+    var tctx = thumbCanvas.getContext("2d");
+
+    (async function () {
+      // ---- 先抽样定全局调色板 ----
+      var SAMPLE_N = Math.min(10, total);
+      var sw = Math.min(96, outW), sh = Math.max(1, Math.round(outH * sw / outW));
+      var sc = document.createElement("canvas");
+      sc.width = sw; sc.height = sh * SAMPLE_N;
+      var sctx = sc.getContext("2d", { willReadFrequently: true });
+
+      for (var s = 0; s < SAMPLE_N; s++) {
+        var st = Math.min(vidDur - 1e-3, (Math.round(s * (total - 1) / Math.max(1, SAMPLE_N - 1))) * iv);
+        await seekTo(st);
+        sctx.drawImage(video, 0, s * sh, sw, sh);
+        statusLine.textContent = "分析配色… " + (s + 1) + " / " + SAMPLE_N;
+        progBar.style.width = (2 + s * (8 / SAMPLE_N)) + "%";
+        await frame();
+      }
+      palette = GIF_LIB.quantize(sctx.getImageData(0, 0, sw, sh * SAMPLE_N).data, colors, { format: "rgb565" });
+
+      // ---- 再逐帧量化入库 ----
+      for (var i = 0; i < total; i++) {
+        var t = Math.min(vidDur - 1e-3, i * iv);
+        await seekTo(t);
+        var img = raster(outW, outH);
+        var indexed = GIF_LIB.applyPalette(img.data, palette, "rgb565");
+
+        tctx.drawImage(work, 0, 0, THUMB_W, thH);
+        var tc = document.createElement("canvas");
+        tc.width = THUMB_W; tc.height = thH;
+        tc.getContext("2d").drawImage(thumbCanvas, 0, 0);
+
+        frames.push({ indexed: indexed, thumb: tc, t: t });
+
+        statusLine.textContent = "抽取中… " + (i + 1) + " / " + total;
+        progBar.style.width = (10 + (i + 1) * (90 / total)) + "%";
+        await frame();
+      }
+
+      video.pause();
+      video.currentTime = 0;
+      renderStrip();
+      progBar.style.width = "100%";
+
+      // 被上限截断时要说明白，否则用户会以为整段视频都转了
+      var wanted = plannedCount();
+      setStatus("已抽取 " + frames.length + " 帧" +
+                (wanted > MAX_FRAMES ? "（原计划 " + wanted + " 帧，已按上限截断）" : "") +
+                "，可拖拽调整顺序");
+      statusLine.textContent = wanted > MAX_FRAMES
+        ? "只转了前 " + MAX_FRAMES + " 帧（" + (MAX_FRAMES * delay / 1000).toFixed(1) + "s）。想覆盖整段请调大帧间隔。"
+        : "确认帧顺序后点「生成 GIF」。";
+      setTimeout(function () { progWrap.style.display = "none"; }, 500);
+    })().catch(function (e) {
+      statusLine.className = "hint-line warn";
+      statusLine.textContent = "抽取失败：" + (e && e.message ? e.message : e);
+      setStatus("抽取失败");
+      progWrap.style.display = "none";
+      video.pause();
+    }).then(function () {
+      busy = false;
+      syncButtons();
+    });
+  }
+
+  // 让出主线程，保证进度条能刷新。
+  // 只用 setTimeout，不能用 requestAnimationFrame：标签页不渲染时
+  // rAF 会被节流甚至一次都不触发，整个抽取循环就卡死在那里。
+  function frame() { return new Promise(function (r) { setTimeout(r, 0); }); }
+
+  /* =========================================================
+     生成 GIF —— 帧已经是索引字节，这里只是搬运
+     ========================================================= */
+  function makeGIF() {
+    if (frames.length < 2 || busy) return;
+    busy = true;
+    syncButtons();
+    gifBlob = null;
+    dlBtn.disabled = true;
+    progWrap.style.display = "";
+    progBar.style.width = "0%";
+    statusLine.className = "hint-line";
+    setStatus("正在生成 GIF…");
+
+    // loopN 是 DOM 元素，必须取 .value；直接写 loopN|0 会把元素转成
+    // NaN，再 |0 变成 0，于是「指定次数」永远只循环 1 次。
+    var repeat = loopMode === "0" ? 0 : loopMode === "-1" ? -1
+               : Math.min(999, Math.max(1, parseInt(loopN.value, 10) || 1));
+    var colorDepth = Math.max(1, Math.ceil(Math.log2(palette.length)));
+    var gif = GIF_LIB.GIFEncoder({ initialCapacity: Math.max(4096, outW * outH * frames.length / 8) });
+
+    (async function () {
+      for (var i = 0; i < frames.length; i++) {
+        // palette 只在首帧给出 → 写入全局色表；之后不传即复用该表
+        gif.writeFrame(frames[i].indexed, outW, outH, {
+          palette: i === 0 ? palette : null,
+          delay: delay,
+          repeat: repeat,
+          colorDepth: colorDepth
+        });
+        statusLine.textContent = "编码中… " + (i + 1) + " / " + frames.length;
+        progBar.style.width = ((i + 1) * (100 / frames.length)) + "%";
+        await frame();
+      }
+      gif.finish();
+      gifBlob = new Blob([gif.bytes()], { type: "image/gif" });
+      showResult();
+      setStatus("已生成 " + frames.length + " 帧动图，" + humanSize(gifBlob.size));
+      setTimeout(function () { progWrap.style.display = "none"; }, 500);
+    })().catch(function (e) {
+      statusLine.className = "hint-line warn";
+      statusLine.textContent = "生成失败：" + (e && e.message ? e.message : e);
+      setStatus("生成失败");
+      progWrap.style.display = "none";
+    }).then(function () {
+      busy = false;
+      syncButtons();
+    });
+  }
+
+  function showResult() {
+    if (gifURL) URL.revokeObjectURL(gifURL);
+    gifURL = URL.createObjectURL(gifBlob);
+    stage.textContent = "";
+    var im = document.createElement("img");
+    im.src = gifURL;
+    im.alt = "";
+    stage.hidden = false;
+    stage.appendChild(im);
+    metaRow.hidden = false;
+    resultHint.textContent = "";
+    emptyEl.style.display = "none";
+    pvTitle.textContent = "动图预览";
+    dlBtn.disabled = false;
+
+    $("mFrames").textContent = frames.length;
+    $("mSize").textContent = outW + "×" + outH;
+    $("mDur").textContent = (frames.length * delay / 1000).toFixed(1) + "s";
+    $("mBytes").textContent = humanSize(gifBlob.size);
+  }
+
+  /* =========================================================
+     帧条
+     ========================================================= */
+  function renderStrip() {
+    strip.textContent = "";
+    stripTitle.hidden = frames.length === 0;
+
+    frames.forEach(function (fr, i) {
+      var chip = document.createElement("div");
+      chip.className = "fchip";
+      chip.addEventListener("pointerdown", function (e) { startDrag(e, fr, chip); });
+
+      var cv = document.createElement("canvas");
+      cv.width = fr.thumb.width; cv.height = fr.thumb.height;
+      cv.getContext("2d").drawImage(fr.thumb, 0, 0);
+      chip.appendChild(cv);
+
+      var no = document.createElement("span");
+      no.className = "no";
+      no.textContent = i + 1;
+      chip.appendChild(no);
+
+      var rm = document.createElement("button");
+      rm.className = "rm";
+      rm.textContent = "✕";
+      rm.title = "移除这一帧";
+      rm.addEventListener("click", function (e) {
+        e.stopPropagation();
+        var k = frames.indexOf(fr);
+        if (k < 0) return;
+        frames.splice(k, 1);
+        invalidate();
+        renderStrip();
+        setStatus("已移除 1 帧");
+      });
+      chip.appendChild(rm);
+
+      var nm = document.createElement("div");
+      nm.className = "nm";
+      nm.textContent = fr.t.toFixed(2) + "s";
+      chip.appendChild(nm);
+
+      strip.appendChild(chip);
+    });
+  }
+
+  /* =========================================================
+     拖拽排序
+     ------------------------------------------------------------
+     用指针事件而不是 HTML5 draggable——后者在触屏上完全不可用。
+     监听器挂在 document 上：排序过程中整条列表会重渲染，卡片
+     节点被替换后，节点自身的监听器就失效了。
+     另：✕ 按钮上主动跳过，否则「移除」会被误判成「开始拖拽」。
+     ========================================================= */
+  var DRAG_THRESHOLD = 5;   // 超过该位移才算拖拽，否则当作普通点击
+
+  function startDrag(e, fr, chip) {
+    if (e.button != null && e.button !== 0) return;   // 只响应左键
+    if (e.target.closest(".rm")) return;              // ✕ 上不启动拖拽
+    if (frames.length < 2) return;
+    // 阻止浏览器启动原生拖拽/框选，否则 pointermove 会被打断
+    if (e.cancelable) e.preventDefault();
+
+    var st = { x0: e.clientX, y0: e.clientY, active: false, last: null };
+
+    function onMove(ev) {
+      if (!st.active) {
+        var dx = ev.clientX - st.x0, dy = ev.clientY - st.y0;
+        if (Math.abs(dx) < DRAG_THRESHOLD && Math.abs(dy) < DRAG_THRESHOLD) return;
+        st.active = true;
+        chip.classList.add("ghost");
+        document.body.classList.add("dragging");
+      }
+      var target = chipUnder(ev.clientX, ev.clientY);
+      // 目标没变就别再重排。卡片是边拖边让位的，每次 pointermove 都重算的话，
+      // 松手前它会自己一路漂到末尾去。
+      if (!target || target === st.last) return;
+      st.last = target;
+      if (target === "end") moveToEnd(fr);
+      else moveBefore(target, fr);
+    }
+
+    function onUp() {
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", onUp);
+      document.removeEventListener("pointercancel", onUp);
+      if (!st.active) return;                    // 只是点了一下，不算拖拽
+      document.body.classList.remove("dragging");
+      renderStrip();
+      invalidate();                              // 顺序变了，旧结果已失效
+      setStatus("顺序已调整，可重新生成 GIF");
+    }
+
+    document.addEventListener("pointermove", onMove);
+    document.addEventListener("pointerup", onUp);
+    document.addEventListener("pointercancel", onUp);
+  }
+
+  /* 指针要落到哪张卡之前。
+     先定「行」再定「列」——行距只有 89px，如果改成找「距离最近的卡」，
+     指针穿过换行缝隙时会把卡片在两行之间来回甩。
+     ghost 按 class 排除：重排会重建整个列表，按节点排除在重排后就失效了。
+     返回具体卡片或 "end"，无法判断时返回 null。 */
+  function chipUnder(cx, cy) {
+    var chips = [], tops = [], i, r, bestDy = Infinity, rowTop = null;
+    for (i = 0; i < strip.children.length; i++) {
+      if (strip.children[i].classList.contains("ghost")) continue;
+      r = strip.children[i].getBoundingClientRect();
+      chips.push({ el: strip.children[i], r: r });
+      if (tops.indexOf(r.top) < 0) tops.push(r.top);
+    }
+    if (!chips.length) return null;
+    tops.sort(function (a, b) { return a - b; });
+
+    // 1) 落在哪一行（按行中心线找最近的一行）
+    for (i = 0; i < tops.length; i++) {
+      var dy = Math.abs(cy - (tops[i] + chips[0].r.height / 2));
+      if (dy < bestDy) { bestDy = dy; rowTop = tops[i]; }
+    }
+
+    // 2) 这一行里，落在第几张之前（落在卡片右半边即算越过它）
+    var row = chips.filter(function (c) { return c.r.top === rowTop; });
+    if (!row.length) return null;            // 该行只剩被拖的那张，先不动
+    var k = 0;
+    while (k < row.length && row[k].r.left + row[k].r.width / 2 < cx) k++;
+    if (k < row.length) return row[k].el;
+
+    // 3) 已越过本行末尾 → 排到本行最后一张之后。
+    //    排到最前不需要单独分支：落在第一张的左半边时 k 就是 0。
+    var li = chips.indexOf(row[row.length - 1]);
+    return li + 1 < chips.length ? chips[li + 1].el : "end";
+  }
+
+  // 把 fr 插到 target 前面
+  function moveBefore(target, fr) {
+    var chips = [].slice.call(strip.children);
+    var tIdx = chips.indexOf(target);
+    var from = frames.indexOf(fr);
+    if (tIdx < 0 || from < 0) return;
+
+    // 摘掉被拖项后，目标卡在剩余序列里的下标：它在被拖项之前就要前移一格
+    var insertAt = from < tIdx ? tIdx - 1 : tIdx;
+    if (insertAt === from) return;           // 位置没变，直接返回
+    // 注意：下面两步必须成对出现，中途 return 会把 fr 丢掉
+    frames.splice(from, 1);
+    frames.splice(insertAt, 0, fr);
+
+    renderStrip();
+    // 重渲染后 ghost 换成了另一个节点，把样式补回去
+    var moved = strip.children[insertAt];
+    if (moved) moved.classList.add("ghost");
+  }
+
+  function moveToEnd(fr) {
+    var from = frames.indexOf(fr);
+    if (from < 0 || from === frames.length - 1) return;
+    frames.push(frames.splice(from, 1)[0]);
+    renderStrip();
+    var moved = strip.children[frames.length - 1];
+    if (moved) moved.classList.add("ghost");
+  }
+
+  /* =========================================================
+     控件
+     ========================================================= */
+  function setDelay(ms) {
+    delay = Math.min(2000, Math.max(20, ms));
+    durRange.value = delay;
+    durVal.textContent = delay + " ms";
+    syncCount();
+  }
+
+  function markPreset(v) {
+    [].forEach.call($("durPresets").children, function (b) {
+      var d = parseInt(b.dataset.dur, 10);
+      b.classList.toggle("on", !isNaN(d) && d === v);
+    });
+  }
+
+  [].forEach.call($("durPresets").children, function (b) {
+    b.addEventListener("click", function () {
+      var raw = b.dataset.dur;
+      if (raw === "custom") {
+        [].forEach.call(b.parentNode.children, function (o) { o.classList.toggle("on", o === b); });
+        durRange.focus();
+        return;
+      }
+      setDelay(parseInt(raw, 10));
+      markPreset(parseInt(raw, 10));
+    });
+  });
+
+  durRange.addEventListener("input", function () {
+    var v = parseInt(durRange.value, 10);
+    setDelay(v);
+    markPreset(v);           // 滑到与某档相同的值时把那档点亮，否则全部熄灭
+  });
+
+  [].forEach.call($("loopSeg").children, function (b) {
+    b.addEventListener("click", function () {
+      [].forEach.call(b.parentNode.children, function (o) { o.classList.toggle("on", o === b); });
+      loopMode = b.dataset.loop;
+      loopRow.style.display = loopMode === "n" ? "" : "none";
+    });
+  });
+
+  [].forEach.call($("colorSeg").children, function (b) {
+    b.addEventListener("click", function () {
+      [].forEach.call(b.parentNode.children, function (o) { o.classList.toggle("on", o === b); });
+      colors = parseInt(b.dataset.color, 10);
+      // 颜色数参与调色板，抽好的帧已经按旧表量化过了
+      if (frames.length) {
+        frames = [];
+        invalidate();
+        renderStrip();
+        setStatus("颜色数已改，请重新抽取帧");
+      }
+    });
+  });
+
+  sizeSel.addEventListener("change", function () {
+    maxEdge = parseInt(sizeSel.value, 10) || 0;
+    if (frames.length) {
+      frames = [];
+      invalidate();
+      renderStrip();
+      setStatus("尺寸已改，请重新抽取帧");
+    }
+  });
+
+  drop.addEventListener("click", function () { fileInput.click(); });
+  fileInput.addEventListener("change", function () {
+    var f = fileInput.files && fileInput.files[0];
+    if (f) loadVideo(f);
+  });
+
+  ["dragenter", "dragover"].forEach(function (ev) {
+    drop.addEventListener(ev, function (e) {
+      e.preventDefault(); e.stopPropagation();
+      drop.classList.add("dragover");
+    });
+  });
+  ["dragleave", "drop"].forEach(function (ev) {
+    drop.addEventListener(ev, function (e) {
+      e.preventDefault(); e.stopPropagation();
+      drop.classList.remove("dragover");
+    });
+  });
+  drop.addEventListener("drop", function (e) {
+    var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f) loadVideo(f);
+  });
+
+  grabBtn.addEventListener("click", grab);
+  makeBtn.addEventListener("click", makeGIF);
+  clearBtn.addEventListener("click", function () {
+    resetAll();
+    vidURL = null; vidName = ""; vidDur = 0; vidW = 0; vidH = 0;
+    $("infoGroup").hidden = true;
+    syncCount();
+    setStatus("已清空");
+  });
+
+  dlBtn.addEventListener("click", function () {
+    if (!gifBlob) return;
+    var a = document.createElement("a");
+    a.href = gifURL || URL.createObjectURL(gifBlob);
+    a.download = baseName + ".gif";
+    a.click();
+    // 延后回收：img 还在加载时 revoke 会导致 ERR_FILE_NOT_FOUND
+    setTimeout(function () { if (a.href.indexOf("blob:") === 0) URL.revokeObjectURL(a.href); }, 3000);
+  });
+
+  // 拖拽排序的兜底：帧条内不允许任何原生拖拽
+  strip.addEventListener("dragstart", function (e) { e.preventDefault(); });
+
+  setDelay(100);
+  markPreset(100);
+  syncButtons();
+  syncCount();
+})();
+</script>
+</body>
+</html>
