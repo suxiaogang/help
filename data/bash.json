@@ -1,0 +1,81 @@
+{
+	"blocks": [
+		{
+			"g": "文件与目录",
+			"items": [
+				{ "cmd": "pwd", "d": "显示当前所在目录（print working directory）" },
+				{ "cmd": "ls", "d": "列出当前目录下的文件" },
+				{ "cmd": "ls -alh", "d": "列出全部文件，含隐藏文件、权限、人类可读的大小" },
+				{ "cmd": "cd /", "d": "进入根目录" },
+				{ "cmd": "cd ~", "d": "回到自己的家目录（只敲 cd 也可以）" },
+				{ "cmd": "cd ..", "d": "回到上一级目录" },
+				{ "cmd": "cd -", "d": "回到刚才所在的目录" },
+				{ "cmd": "cd /var/www", "d": "直接进入某个完整路径（这里以 /var/www 为例）" },
+				{ "cmd": "cp file foo", "d": "复制文件：把 file 复制成 foo，原文件保留" },
+				{ "cmd": "cp -r dir foo", "d": "递归复制整个目录" },
+				{ "cmd": "mv file foo", "d": "重命名：把 file 改名成 foo" },
+				{ "cmd": "mv foo ~/Desktop", "d": "移动：把 foo 移动到桌面（不改名）" },
+				{ "cmd": "rm file", "d": "删除文件" },
+				{ "cmd": "rmdir dir", "d": "删除空目录" },
+				{ "cmd": "rm -rf dir", "d": "递归强制删除目录及其中所有内容，危险，务必确认路径" },
+				{ "cmd": "mkdir music", "d": "新建一个目录" },
+				{ "cmd": "man man", "d": "查看某个命令的手册，这里是查看 man 自己" }
+			]
+		},
+		{
+			"g": "压缩与解压",
+			"items": [
+				{ "cmd": "tar xvf wordpress.tar", "d": "解压 tar 格式的文件" },
+				{ "cmd": "tar tvf myfile.tar", "d": "查看 tar 文件里包含哪些文件" },
+				{ "cmd": "tar cf toole.tar tool", "d": "把 tool 目录打包成 toole.tar" },
+				{ "cmd": "tar zcf vpser.tar.gz tool", "d": "打包并压缩成 .tar.gz" },
+				{ "cmd": "tar jcvf /var/bak/www.tar.bz2 /var/www/", "d": "创建 .tar.bz2，压缩率更高" },
+				{ "cmd": "tar xjf www.tar.bz2", "d": "解压 .tar.bz2 格式" },
+				{ "cmd": "gzip -d ge.tar.gz", "d": "把 .tar.gz 解压成 .tar" },
+				{ "cmd": "unzip phpbb.zip", "d": "解压 zip 文件" }
+			]
+		},
+		{
+			"g": "进程管理",
+			"items": [
+				{ "cmd": "ps -aux", "d": "查看进程状态" },
+				{ "cmd": "ps -aux | grep nginx", "d": "在所有进程中查找 nginx" },
+				{ "cmd": "kill 1234", "d": "结束指定进程，1234 是 ps 里的 PID" },
+				{ "cmd": "killall nginx", "d": "按程序名结束该程序的所有进程" }
+			]
+		},
+		{
+			"g": "ps 输出字段含义",
+			"items": [
+				{ "cmd": "USER", "d": "进程所有者的用户名" },
+				{ "cmd": "PID", "d": "进程号，唯一标识该进程" },
+				{ "cmd": "%CPU", "d": "进程自最近一次刷新以来占用 CPU 时间的百分比" },
+				{ "cmd": "%MEM", "d": "进程使用内存的百分比" },
+				{ "cmd": "VSZ", "d": "进程使用的虚拟内存大小，单位 K" },
+				{ "cmd": "RSS", "d": "进程占用的物理内存总量，单位 K" },
+				{ "cmd": "TTY", "d": "进程相关的终端名" },
+				{ "cmd": "STAT", "d": "进程状态：R 运行或准备运行；S 睡眠；I 空闲；Z 冻结；D 不间断睡眠；W 进程没有驻留页；T 停止或跟踪" },
+				{ "cmd": "START", "d": "进程开始运行时间" },
+				{ "cmd": "TIME", "d": "进程使用的总 CPU 时间" },
+				{ "cmd": "COMMAND", "d": "被执行的命令行" }
+			]
+		},
+		{
+			"g": "资源占用查询",
+			"items": [
+				{ "cmd": "df -sh /home/wwwroot/*", "d": "查看 /home/wwwroot/ 下各个目录的占用大小" },
+				{ "cmd": "free -m", "d": "查看内存和 swap 使用情况（单位 MB）" },
+				{ "cmd": "top", "d": "实时查看程序的 CPU、内存占用" },
+				{ "cmd": "netstat -ntl", "d": "查看端口占用情况" }
+			]
+		},
+		{
+			"g": "用户管理",
+			"items": [
+				{ "cmd": "adduser vpser", "d": "添加用户，这里新建一个名为 vpser 的用户" },
+				{ "cmd": "deluser vpser", "d": "删除用户" },
+				{ "cmd": "passwd", "d": "修改密码，按提示输入，密码不显示" }
+			]
+		}
+	]
+}

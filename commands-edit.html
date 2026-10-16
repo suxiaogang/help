@@ -1,0 +1,896 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>命令速查 · 编辑器</title>
+<style>
+  /* 与 commands.html / 各工具子页面共用同一套色板 */
+  :root {
+    --bg: #0e1116;
+    --panel: #171c24;
+    --panel-2: #1e2632;
+    --border: #2a3340;
+    --text: #e8edf4;
+    --muted: #8b97a8;
+    --accent: #3dd68c;
+    --accent-2: #2bb673;
+    --warn: #ffb340;
+    --danger: #ff6b6b;
+    --radius: 10px;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+            "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; height: 100vh; height: 100dvh; overflow: hidden;
+    background: var(--bg); color: var(--text);
+    font: 14px/1.55 var(--sans);
+    display: flex; flex-direction: column;
+  }
+
+  /* ===================== 页头 ===================== */
+  header {
+    flex: 0 0 auto; padding: 10px 18px;
+    border-bottom: 1px solid var(--border); background: var(--panel);
+    display: flex; align-items: center; gap: 12px;
+  }
+  header h1 { font-size: 15px; margin: 0; font-weight: 600; letter-spacing: .3px; white-space: nowrap; }
+  header .sp { flex: 1 1 auto; }
+  header .note { font-size: 11.5px; color: var(--muted); }
+
+  button {
+    font: inherit; font-size: 12.5px; color: var(--text);
+    background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 7px; padding: 6px 11px; cursor: pointer;
+    transition: background .12s, border-color .12s;
+  }
+  button:hover:not(:disabled) { background: #26303e; border-color: #3a4557; }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  button.primary {
+    background: var(--accent-2); border-color: var(--accent-2);
+    color: #06210f; font-weight: 600;
+  }
+  button.primary:hover:not(:disabled) { background: var(--accent); border-color: var(--accent); }
+  button.ghost { background: transparent; }
+  button.danger:hover:not(:disabled) { border-color: var(--danger); color: var(--danger); }
+
+  .seg { display: inline-flex; gap: 4px; }
+  .seg button { padding: 6px 12px; border-radius: 6px; }
+  .seg button.on { background: var(--accent-2); border-color: var(--accent-2); color: #06210f; font-weight: 600; }
+
+  /* ===================== 主体 ===================== */
+  .layout {
+    flex: 1 1 auto; min-height: 0;
+    display: grid; grid-template-columns: minmax(380px, 460px) minmax(0, 1fr);
+  }
+  /* 单列视图里被隐藏的那一列不再生成网格项，所以这里给单列即可；
+     写成 "0 …" 会让唯一剩下的那列落到宽度为 0 的第一列里。 */
+  /* 三种视图。分栏和 JSON 都是两栏，左边都是结构编辑器，右边换内容：
+     split → commands.html 的真实渲染
+     json  → 当前分类那一个 JSON 文件
+   「编辑」把右栏整个去掉，给宽屏用。隐藏的列不再生成网格项，
+   所以这一种情况给单列即可。
+   （原先还有个「预览」独占模式，和分栏观感重复，已经删掉。） */
+  .layout.view-edit { grid-template-columns: minmax(0, 1fr); }
+  .layout.view-edit .col-preview { display: none; }
+  /* JSON 模式：右栏里用源码区换掉预览 iframe */
+  .layout.view-json    .pv-frame    { display: none; }
+
+  .col { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+  .col-edit { border-right: 1px solid var(--border); }
+  .layout.view-edit .col-edit { border-right: 0; }
+
+  .col-head {
+    flex: 0 0 auto; padding: 9px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 8px; background: var(--panel);
+  }
+  .col-head h2 { font-size: 12px; margin: 0; color: var(--muted); font-weight: 600; letter-spacing: .4px; }
+  .scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 12px 16px 24px; }
+
+  /* ===================== 分类 Tab ===================== */
+  .cats { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  /* 内边距要和右栏的按钮（全局 button 的 6px 11px）对齐，
+     否则左右两列的 .col-head 会差 2px，底下的分隔线不在一条线上 */
+  .cats button { padding: 6px 10px; }
+  .cats button.on { background: var(--accent-2); border-color: var(--accent-2); color: #06210f; font-weight: 600; }
+
+  /* 分类这一层不进编辑器：categories.json 就三行字段，手改比点按钮快。
+     顶部的分类 Tab 只用来切换「正在编辑哪个分类」。 */
+
+  /* 这里不能用 input[type="text"]：页面上写的是 <input class="f-main">，
+     没有 type 属性，属性选择器不会匹配（隐式的 text 也不算），
+     结果整段样式完全落空——输入框变回浏览器默认的白底灰边，
+     焦点环也是默认的蓝色，而且 min-width:0 没生效，
+     flex 布局里缩不下去，把后面的上移/删除按钮挤出容器被裁掉。 */
+  input, textarea {
+    font: inherit; font-size: 12.5px; color: var(--text);
+    background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+    padding: 5px 8px; min-width: 0; appearance: none;
+  }
+  input::placeholder, textarea::placeholder { color: #5d6878; }
+
+  /* 聚焦：整块底色提亮，不用边框变色。
+     边框一旦加粗或换色，在这块窄区域里特别显眼。 */
+  input:focus, textarea:focus {
+    outline: none; border-color: var(--border);
+    background: var(--panel-2);
+    box-shadow: inset 0 0 0 1px var(--border);   /* 始终 1px，聚焦不变粗 */
+  }
+
+  /* ===================== 分组卡片 ===================== */
+  .group {
+    margin-bottom: 12px; background: var(--panel);
+    border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden;
+  }
+  .group-head {
+    display: flex; align-items: center; gap: 8px;
+    padding: 9px 12px; border-bottom: 1px solid var(--border); background: #1a2029;
+  }
+  .group-head .f-g { flex: 1 1 auto; font-weight: 600; font-size: 13px; }
+  .group-head .count { font-size: 11px; color: var(--muted); font-family: var(--mono); white-space: nowrap; }
+  .group-body { padding: 10px 12px; }
+  .group-foot {
+    display: flex; gap: 6px; flex-wrap: wrap; align-items: center;
+    padding: 9px 12px; border-top: 1px solid var(--border);
+  }
+  .group-foot .sp { flex: 1 1 auto; }
+
+  /* ===================== 条目 ===================== */
+  .item { margin-bottom: 7px; }
+  .item:last-child { margin-bottom: 0; }
+  .item-row { display: flex; gap: 6px; align-items: center; }
+  /* 命令普遍短、说明普遍长（当前数据里最长命令 39 字符、最长说明 55 字符），
+     所以命令框给一个基准宽度就停住、不再跟着整行拉长，多出来的全给说明。
+     分栏模式下空间不够会按比例收缩，收不动时保底 130px。 */
+  .f-main { flex: 0 1 300px; min-width: 110px; font-family: var(--mono); font-size: 12px; }
+  .f-desc { flex: 1 1 330px; min-width: 140px; }
+  .ib {
+    flex: 0 0 auto; padding: 3px 7px; font-size: 11.5px; border-radius: 5px;
+    background: transparent; color: var(--muted);
+  }
+  .ib:hover:not(:disabled) { color: var(--text); background: #26303e; }
+  .ib.danger:hover:not(:disabled) { color: var(--danger); border-color: var(--danger); }
+
+  /* ===================== 预览 ===================== */
+  .pv-frame { flex: 1 1 auto; min-height: 0; }
+  .pv-frame iframe { width: 100%; height: 100%; border: 0; display: block; background: var(--bg); }
+
+  /* ===================== JSON 源码视图 ===================== */
+  /* 结构编辑区。display 写在样式表里而不是行内：行内样式优先级更高，
+     会把「JSON 视图下隐藏它」那条规则盖掉，导致源码区被挤到下面去。 */
+  .ed-wrap { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+  /* JSON 源码区。显隐也交给样式表：行内样式优先级更高，
+     很容易在某次改 JS 时忘了同步。 */
+  .src { flex: 1 1 auto; min-height: 0; display: none; flex-direction: column; }
+  .layout.view-json .src { display: flex; }
+  /* 源码区：textarea 负责编辑，底下垫一层着色的 <pre>，最左边再垫一层行号。
+     三层的字体、行高、内边距必须完全一致，否则文字会错位。 */
+  .src-wrap { flex: 1 1 auto; min-height: 0; position: relative; background: #0b0e13; }
+  .src-wrap .gutter, .src-wrap .hl, .src-wrap textarea {
+    position: absolute; inset: 0; margin: 0;
+    font-family: var(--mono); font-size: 12px; line-height: 1.6;
+    padding: 12px 16px; border: 0; white-space: pre; overflow: auto;
+    tab-size: 4;
+  }
+  /* 行号单独占左侧一条，文字层往右让出同样的宽度 */
+  .src-wrap .gutter {
+    width: 46px; padding: 12px 8px 12px 0; overflow: hidden;
+    text-align: right; color: #46525f;
+    border-right: 1px solid #1a2029; user-select: none;
+  }
+  .src-wrap .hl, .src-wrap textarea { padding-left: 58px; }
+  .src-wrap .hl { color: var(--text); pointer-events: none; overflow: hidden; }
+  .src-wrap textarea {
+    /* 文字本身透明，露出来的是底下那层着色结果；
+       光标保持可见，否则没法定位 */
+    background: transparent; color: transparent; caret-color: var(--text);
+    resize: none;
+  }
+  .src-wrap textarea::selection { background: rgba(61, 214, 140, .26); }
+  .src-wrap .hl .t-key { color: #7fd4ff; }
+  .src-wrap .hl .t-str { color: #9fe0a8; }
+  .src-wrap .hl .t-num { color: var(--warn); }
+  .src-wrap .hl .t-lit { color: var(--accent); }
+
+  .src-foot {
+    flex: 0 0 auto; display: flex; gap: 8px; align-items: center;
+    padding: 8px 16px; border-top: 1px solid var(--border); background: var(--panel);
+  }
+  .src-foot .msg { font-size: 11.5px; color: var(--muted); }
+  .src-foot .src-name {
+    font-family: var(--mono); font-size: 11.5px; color: var(--accent);
+  }
+  .src-foot .src-count { font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
+  .src-foot .msg.ok { color: var(--accent); }
+  .src-foot .msg.err { color: var(--danger); }
+
+  /* ===================== 状态条 ===================== */
+  footer {
+    flex: 0 0 auto; padding: 8px 18px;
+    border-top: 1px solid var(--border); background: var(--panel);
+    display: flex; align-items: center; gap: 12px; font-size: 12px; color: var(--muted);
+  }
+  footer .sp { flex: 1 1 auto; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); flex: 0 0 auto; }
+  .dot.dirty { background: var(--warn); }
+  .stat { font-family: var(--mono); font-size: 11.5px; }
+
+  /* ===================== 提示条 / 弹层 ===================== */
+  .bar {
+    flex: 0 0 auto; padding: 9px 18px; font-size: 12.5px;
+    background: #2a2313; border-bottom: 1px solid #3d3320; color: var(--warn);
+    display: none; align-items: center; gap: 10px;
+  }
+  .bar.show { display: flex; }
+  .bar .sp { flex: 1 1 auto; }
+
+  .modal {
+    position: fixed; inset: 0; background: #000a; z-index: 50;
+    display: none; align-items: center; justify-content: center; padding: 20px;
+  }
+  .modal.show { display: flex; }
+  .modal .box {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+    max-width: 460px; width: 100%; max-height: 80vh; overflow-y: auto;
+    box-shadow: 0 18px 50px #000a;
+  }
+  .modal h3 { margin: 0; padding: 14px 18px; font-size: 14px; border-bottom: 1px solid var(--border); }
+  .modal .body { padding: 14px 18px; }
+  .modal .body p { margin: 0 0 10px; font-size: 12.5px; color: var(--muted); line-height: 1.6; }
+  .modal .foot { padding: 12px 18px; border-top: 1px solid var(--border); display: flex; gap: 8px; justify-content: flex-end; }
+  .fl { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--border); }
+  .fl:last-child { border-bottom: 0; }
+  .fl .nm { flex: 0 0 auto; font-family: var(--mono); font-size: 12px; }
+  .fl .sz { flex: 1 1 auto; font-size: 11px; color: var(--muted); font-family: var(--mono); }
+
+  /* 滚动条：内容比视口高很多，得让人一眼看出这里能滚。
+     默认的细条在深色底上几乎看不见，滑块加宽加深、留出轨道背景。 */
+  ::-webkit-scrollbar { width: 12px; height: 12px; }
+  ::-webkit-scrollbar-track { background: #12161c; border-radius: 6px; }
+  ::-webkit-scrollbar-thumb {
+    background: #3d4a5c; border-radius: 6px;
+    border: 2px solid #12161c;   /* 用边框做出间隙，滑块本身看着更清楚 */
+  }
+  ::-webkit-scrollbar-thumb:hover { background: #51627a; }
+  /* Firefox 不支持 ::-webkit- 那套，用标准属性补上 */
+  * { scrollbar-width: auto; scrollbar-color: #3d4a5c #12161c; }
+
+  @media (max-width: 860px) {
+    body { height: auto; overflow: auto; }
+    .layout { grid-template-columns: minmax(0, 1fr); }
+    .col-edit { border-right: 0; border-bottom: 1px solid var(--border); }
+    .scroll { overflow: visible; }
+    .pv-frame { height: 70vh; }
+    /* 单列时列高由内容决定，flex:1 1 auto 拿不到高度；
+       没有这个的话空文本框会塌成一条，源码几乎看不见 */
+    .src { height: 70vh; }
+    header { flex-wrap: wrap; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>命令速查 · 编辑器</h1>
+  <div class="seg" id="viewSeg">
+    <button data-view="edit">编辑</button>
+    <button data-view="split" class="on">分栏</button>
+    <button data-view="json">JSON</button>
+  </div>
+  <span class="sp"></span>
+  <span class="note" id="srcNote">本地维护工具，改完记得导出并提交</span>
+  <button id="reloadBtn" class="ghost">重新载入</button>
+  <button id="exportBtn" class="primary">导出 JSON</button>
+</header>
+
+<div class="bar" id="draftBar">
+  <span>发现未导出的草稿（上次编辑没保存到文件）。</span>
+  <span class="sp"></span>
+  <button id="draftUse">恢复草稿</button>
+  <button id="draftDrop" class="ghost">丢弃</button>
+</div>
+
+<div class="layout view-split" id="layout">
+  <!-- ===================== 左：结构化编辑 ===================== -->
+  <div class="col col-edit">
+    <div class="col-head">
+      <div class="cats" id="catTabs"></div>
+      <span class="sp" style="flex:1 1 auto"></span>
+    </div>
+
+    <div class="ed-wrap">
+      <div class="scroll" id="editor"></div>
+    </div>
+  </div>
+
+  <!-- ===================== 右：HTML 预览 / JSON 预览 ===================== -->
+  <div class="col col-preview">
+    <div class="col-head">
+      <h2 id="pvTitle">实时预览 · 就是 commands.html 的真实效果</h2>
+      <span class="sp" style="flex:1 1 auto"></span>
+      <button class="ghost" id="pvReload">刷新预览</button>
+    </div>
+    <div class="pv-frame" id="pvFrame"><iframe id="pv" src="commands.html" title="预览"></iframe></div>
+
+    <div class="src" id="srcPane">
+      <div class="src-wrap">
+        <pre class="gutter" id="srcGutter" aria-hidden="true"></pre>
+        <pre class="hl" aria-hidden="true"><code id="srcHl"></code></pre>
+        <textarea id="srcText" spellcheck="false"></textarea>
+      </div>
+      <div class="src-foot">
+        <span class="src-name" id="srcName"></span>
+        <span class="src-count" id="srcCount"></span>
+        <button class="primary" id="srcApply">应用到编辑器</button>
+        <span class="sp" style="flex:1 1 auto"></span>
+        <span class="msg" id="srcMsg"></span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <span class="dot" id="dot"></span>
+  <span class="stat" id="stat">载入中…</span>
+  <span class="sp"></span>
+  <span id="draftNote"></span>
+  <a href="commands.html" style="color:var(--muted);font-size:11.5px">查看线上效果 ↗</a>
+</footer>
+
+<!-- ===================== 导出弹层 ===================== -->
+<div class="modal" id="exportModal">
+  <div class="box">
+    <h3>导出 JSON</h3>
+    <div class="body">
+      <p>把下面这些文件下载下来，替换仓库里的 <code>data/</code> 目录，再提交即可。格式与缩进都和现有文件一致，可以直接 diff。</p>
+      <div id="files"></div>
+    </div>
+    <div class="foot">
+      <button id="dlAll" class="primary">全部下载</button>
+      <button class="ghost" data-close>关闭</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var DRAFT_KEY = "commands-draft";
+  var PAGE_HTML = null;      // commands.html 的源码，用来生成预览页
+
+  var CATS = [];        // [{ id, name, icon, blocks: [...] }] —— 与 data/ 里的结构一致
+  var cur = 0;          // 当前编辑的分类下标
+  var view = "split";
+  var dirty = false;    // 相对「已导出的内容」有改动
+
+  var $ = function (id) { return document.getElementById(id); };
+  var editorEl = $("editor"), catTabsEl = $("catTabs"), statEl = $("stat");
+  var dotEl = $("dot"), draftNoteEl = $("draftNote"), draftBar = $("draftBar");
+  var pvEl = $("pv"), srcTextEl = $("srcText"),
+      srcMsg = $("srcMsg"), srcNameEl = $("srcName"),
+      srcHlEl = $("srcHl"), srcCountEl = $("srcCount"), srcGutterEl = $("srcGutter");
+
+  /* ===================== 小工具 ===================== */
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+  /* JSON 序列化，带「短对象压成一行」。
+     JSON.stringify(x, null, "\t") 会把 {cmd, d} 这种两字段对象也拆成四行，
+     一屏下来全是括号和缩进，看不出内容。这里只展开真正有层级的部分：
+     全是基本值、且压成一行不超过 INLINE_MAX 个字符的对象写成一行。 */
+  var INLINE_MAX = 110;
+
+  function json(v, indent) {
+    indent = indent || "";
+    var pad = indent + "\t";
+
+    if (v === null || typeof v !== "object") return JSON.stringify(v);
+
+    if (Array.isArray(v)) {
+      if (!v.length) return "[]";
+      return "[\n" + v.map(function (x) {
+        return pad + json(x, pad);
+      }).join(",\n") + "\n" + indent + "]";
+    }
+
+    var keys = Object.keys(v).filter(function (k) { return v[k] !== undefined; });
+    if (!keys.length) return "{}";
+
+    // 判断能不能压成一行
+    var flat = "{ " + keys.map(function (k) {
+      return JSON.stringify(k) + ": " + JSON.stringify(v[k]);
+    }).join(", ") + " }";
+    var flatable = keys.every(function (k) {
+      return v[k] === null || typeof v[k] !== "object";
+    });
+    if (flatable && flat.length <= INLINE_MAX) return flat;
+
+    return "{\n" + keys.map(function (k) {
+      return pad + JSON.stringify(k) + ": " + json(v[k], pad);
+    }).join(",\n") + "\n" + indent + "}";
+  }
+  function countAll() {
+    return CATS.reduce(function (n, c) {
+      return n + c.blocks.reduce(function (m, b) {
+        return m + (b.items || []).length;
+      }, 0);
+    }, 0);
+  }
+  function markDirty() {
+    dirty = true;
+    dotEl.className = "dot dirty";
+    saveDraft();
+    schedulePreview();
+    // JSON 模式下右边就是文件内容，左边一改必须立刻重算，
+    // 否则「所见即所得」断了，得手动切视图才看得到
+    if (view === "json") refreshSrc();
+    updateStat();
+  }
+  function markClean() {
+    dirty = false;
+    dotEl.className = "dot";
+    clearDraft();
+  }
+
+  /* ===================== 载入 / 草稿 ===================== */
+  function load() {
+    return fetch("data/categories.json")
+      .then(function (r) { return r.json(); })
+      .then(function (cats) {
+        return Promise.all(cats.map(function (c) {
+          return fetch("data/" + c.id + ".json").then(function (r) { return r.json(); });
+        })).then(function (bodies) {
+          CATS = cats.map(function (c, i) {
+            return { id: c.id, name: c.name, icon: c.icon, blocks: bodies[i].blocks };
+          });
+          cur = 0;
+          markClean();
+          renderAll();
+        });
+      });
+  }
+
+  function saveDraft() {
+    try {
+      localStorage.setItem(DRAFT_KEY, json({ cats: CATS, at: Date.now() }) + "\n");
+      draftNoteEl.textContent = "草稿已存在本机";
+    } catch (e) { draftNoteEl.textContent = "本机存储不可用，改动只留在内存里"; }
+  }
+  function clearDraft() {
+    try { localStorage.removeItem(DRAFT_KEY); } catch (e) {}
+    draftNoteEl.textContent = "";
+  }
+  function readDraft() {
+    try {
+      var raw = localStorage.getItem(DRAFT_KEY);
+      if (!raw) return null;
+      var o = JSON.parse(raw);
+      return o && Array.isArray(o.cats) && o.cats.length ? o.cats : null;
+    } catch (e) { return null; }
+  }
+
+  /* ===================== 预览同步 =====================
+     预览跑的就是 commands.html 本尊：同一个文件、同一套 CSS、同一份脚本，
+     所以左边改成什么样，右边看到的就是上线后的样子。
+
+     做法是把这个文件原样抓下来，在 </head> 前注入一段拦截 fetch 的脚本，
+     把内存里的数据冒充成 data/ 下的那几个 JSON，再用 blob: URL 塞进 iframe。
+     这样 commands.html 本身一个字都不用改——它照常去 fetch，只是被拦下来了。
+   */
+  var pvTimer = null, pvURL = null, pvScrollY = 0;
+
+  function loadPageHTML() {
+    return fetch("commands.html").then(function (r) { return r.text(); })
+      .then(function (t) { PAGE_HTML = t; });
+  }
+
+  // 按文件名组织一份，和 data/ 下的文件一一对应
+  function dataByFile() {
+    var m = {};
+    m["categories.json"] = CATS.map(function (c) {
+      return { id: c.id, name: c.name, icon: c.icon };
+    });
+    CATS.forEach(function (c) { m[c.id + ".json"] = { blocks: c.blocks }; });
+    return m;
+  }
+
+  function buildPageHTML() {
+    // 把序列化结果里的左斜杠斜杠转义掉，免得数据里万一出现脚本结束标签，
+    // 把注入的那段提前闭合。（注释里也不能直接写那个标签序列，
+    //  HTML 解析器读到就收尾了，会把后面整段 JS 当正文。）
+    var json = JSON.stringify(dataByFile()).replace(/<\//g, "<\\/");
+    var inject = "<script>(function(){" +
+      "var D=" + json + ",f=window.fetch;" +
+      "window.fetch=function(u){" +
+        "var m=/data\\/([^\\/]+\\.json)/.exec((u&&u.url)||String(u));" +
+        "if(m&&D[m[1]])return Promise.resolve({ok:true," +
+          "json:function(){return Promise.resolve(D[m[1]])}," +
+          "text:function(){return Promise.resolve(JSON.stringify(D[m[1]]))}});" +
+        "return f.apply(this,arguments);" +
+      "};" +
+    "})();<\/script>";
+    return PAGE_HTML.replace("</head>", inject + "</head>");
+  }
+
+  function schedulePreview() {
+    if (pvTimer) clearTimeout(pvTimer);
+    pvTimer = setTimeout(syncPreview, 220);
+  }
+
+  function syncPreview() {
+    if (!PAGE_HTML) return;
+    // 重建 iframe 会回到顶部，把当前滚动位置记下来再还回去
+    try { pvScrollY = pvEl.contentWindow.pageYOffset || 0; } catch (e) {}
+    var next = URL.createObjectURL(new Blob([buildPageHTML()], { type: "text/html" }));
+    pvEl.onload = function () {
+      try { pvEl.contentWindow.scrollTo(0, pvScrollY); } catch (e) {}
+      if (pvURL) URL.revokeObjectURL(pvURL);   // 新的加载完再回收旧的
+      pvURL = next;
+    };
+    pvEl.src = next + "#" + (CATS[cur] ? CATS[cur].id : "");
+  }
+
+  /* ===================== 编辑区渲染 ===================== */
+  function renderAll() {
+    renderCatTabs();
+    renderEditor();
+    updateStat();
+    schedulePreview();
+  }
+
+  /* 分类 Tab 只负责切换，不提供编辑——分类清单手改 categories.json 更省事 */
+  function renderCatTabs() {
+    catTabsEl.innerHTML = CATS.map(function (c, i) {
+      return '<button data-cat="' + i + '" class="' + (i === cur ? "on" : "") + '">' +
+        (c.icon ? esc(c.icon) + " " : "") + esc(c.name) + "</button>";
+    }).join("");
+  }
+
+  function renderEditor() {
+    if (!CATS.length) {
+      editorEl.innerHTML = '<p style="color:var(--muted);font-size:12.5px">' +
+        "data/categories.json 里一个分类都没有。</p>";
+      return;
+    }
+    var c = CATS[cur];
+    editorEl.innerHTML = c.blocks.map(blockHTML).join("") +
+      '<button class="ghost" data-act="blk-add" style="width:100%">+ 新增分组</button>';
+  }
+
+  function blockHTML(b, bi) {
+    var n = (b.items || []).length;
+    return '<div class="group" data-blk="' + bi + '">' +
+      '<div class="group-head">' +
+        '<input class="f-g" data-act="blk-g" value="' + esc(b.g || "") + '">' +
+        '<span class="count">' + n + ' 条</span>' +
+        '<button class="ib" data-act="blk-up" title="上移分组">↑</button>' +
+        '<button class="ib" data-act="blk-down" title="下移分组">↓</button>' +
+        '<button class="ib danger" data-act="blk-del" title="删除分组">删组</button>' +
+      '</div>' +
+      '<div class="group-body">' +
+        (b.items || []).map(function (it, ii) { return itemHTML(it, bi, ii); }).join("") +
+      '</div>' +
+      '<div class="group-foot">' +
+        '<button data-act="item-add" data-blk="' + bi + '">+ 添加一行</button>' +
+      '</div></div>';
+  }
+
+  function itemHTML(it, bi, ii) {
+    return '<div class="item" data-blk="' + bi + '" data-i="' + ii + '">' +
+      '<div class="item-row">' +
+        '<input class="f-main" data-act="f-main" spellcheck="false" ' +
+          'placeholder="命令或快捷键" value="' + esc(it.cmd == null ? "" : it.cmd) + '">' +
+        '<input class="f-desc" data-act="f-desc" placeholder="说明（可省略）" value="' + esc(it.d || "") + '">' +
+        '<button class="ib" data-act="item-up" title="上移">↑</button>' +
+        '<button class="ib" data-act="item-down" title="下移">↓</button>' +
+        '<button class="ib danger" data-act="item-del" title="删除这条">×</button>' +
+      '</div>' +
+    '</div>';
+  }
+
+  function updateStat() {
+    var g = CATS.reduce(function (n, c) { return n + c.blocks.length; }, 0);
+    statEl.textContent = CATS.length + " 分类 · " + g + " 分组 · " + countAll() +
+      " 条" + (dirty ? " · 有未导出的改动" : " · 与文件一致");
+  }
+
+  /* ===================== 增删改 ===================== */
+  function moveIn(arr, i, d) {
+    var j = i + d;
+    if (j < 0 || j >= arr.length) return;
+    var t = arr[i]; arr[i] = arr[j]; arr[j] = t;
+  }
+
+  // 输入框改动：只改数据，不重绘（否则会丢焦点）
+  function onInput(t) {
+    var act = t.getAttribute("data-act");
+    var c = CATS[cur];
+    if (!c) return;
+
+    if (act === "blk-g")    { c.blocks[+t.closest(".group").dataset.blk].g = t.value; markDirty(); return; }
+
+    var grp = t.closest(".group");
+    if (!grp) return;
+    var bi = +grp.dataset.blk, blk = c.blocks[bi];
+
+    if (act === "f-main" || act === "f-desc") {
+      var it = blk.items[+t.closest(".item").dataset.i];
+      if (act === "f-main") { it.cmd = t.value; }
+      if (act === "f-desc") it.d = t.value;
+      markDirty(); return;
+    }
+  }
+
+  // 按钮 / 点击：改完结构就重绘
+  function onClick(e) {
+    var btn = e.target.closest("[data-act]");
+    if (!btn) return;
+    var act = btn.getAttribute("data-act");
+    var c = CATS[cur];
+
+    switch (act) {
+      case "blk-add": {
+        c.blocks.push({ g: "新分组", items: [] });
+        renderEditor(); markDirty(); return;
+      }
+      case "blk-del": {
+        var bi0 = +btn.closest(".group").dataset.blk;
+        if (!confirm("删除分组「" + (c.blocks[bi0].g || "") + "」？")) return;
+        c.blocks.splice(bi0, 1);
+        renderEditor(); markDirty(); return;
+      }
+      case "blk-up":   case "blk-down": {
+        var bi = +btn.closest(".group").dataset.blk;
+        moveIn(c.blocks, bi, act === "blk-up" ? -1 : 1);
+        renderEditor(); markDirty(); return;
+      }
+      case "item-add": {
+        var b1 = c.blocks[+btn.dataset.blk];
+        if (!b1.items) b1.items = [];
+        b1.items.push({ cmd: "", d: "" });
+        renderEditor(); markDirty();
+        focusLastItem(b1); return;
+      }
+      case "item-del": case "item-up": case "item-down": {
+        var it0 = btn.closest(".item"), b2 = c.blocks[+it0.dataset.blk],
+            i0 = +it0.dataset.i;
+        if (act === "item-del")  { b2.items.splice(i0, 1); }
+        if (act === "item-up")   { moveIn(b2.items, i0, -1); }
+        if (act === "item-down") { moveIn(b2.items, i0, 1); }
+        renderEditor(); markDirty(); return;
+      }
+    }
+  }
+
+  function focusLastItem(b) {
+    var els = editorEl.querySelectorAll(".group[data-blk='" + CATS[cur].blocks.indexOf(b) + "'] .item");
+    if (els.length) { var i = els[els.length - 1].querySelector(".f-main"); if (i) i.focus(); }
+  }
+
+  /* ===================== 分类 Tab ===================== */
+  function onCatTab(e) {
+    var b = e.target.closest("[data-cat]");
+    if (!b) return;
+    cur = +b.dataset.cat;
+    renderCatTabs(); renderEditor(); schedulePreview();
+    if (view === "json") refreshSrc();   // 顶部分类在 JSON 视图下就是「选文件」
+  }
+
+  /* ===================== JSON 源码视图 ===================== */
+  function setView(v) {
+    view = v;
+    $("layout").className = "layout view-" + v;
+    [].forEach.call($("viewSeg").children, function (b) {
+      b.className = b.dataset.view === v ? "on" : "";
+    });
+    // 预览 iframe 的显隐交给样式表按视图处理，这里只管内容和数据
+    if (v === "json") refreshSrc();
+    updateTitle();
+    schedulePreview();
+  }
+
+  /* 右栏标题。JSON 模式下要带上当前分类的文件名，
+     所以切分类时也得跟着刷新，不能只在切视图时写一次。 */
+  function updateTitle() {
+    $("pvTitle").textContent = view === "json"
+      ? "JSON 预览 · 就是 data/" + (CATS[cur] ? CATS[cur].id : "") + ".json"
+      : "实时预览 · 就是 commands.html 的真实效果";
+  }
+
+  /* JSON 视图显示的是「当前分类那一个文件」，而不是内存里的全部状态。
+     写成 json(CATS) 会把三个分类连同 id/name/icon 拼成一个数组，
+     既和磁盘上的任何文件都不对应，也没法直接拿去覆盖。
+     这里生成的必须和 data/<id>.json 逐字一致。 */
+  function refreshSrc() {
+    var c = CATS[cur];
+    // 末尾补一个换行，才能和磁盘上的文件逐字一致（文件都是带尾换行写的）
+    srcTextEl.value = c ? json({ blocks: c.blocks }) + "\n" : "";
+    srcNameEl.textContent = c ? "data/" + c.id + ".json" : "";
+    updateTitle();
+    srcMsg.textContent = "";
+    srcMsg.className = "msg";
+    paintSrc();
+    srcTextEl.scrollTop = 0;
+    srcHlEl.parentNode.scrollTop = 0;
+    srcGutterEl.scrollTop = 0;
+  }
+
+  /* JSON 着色。textarea 里没法直接上色，所以用一层 <pre> 垫在下面：
+     文本照常显示在 textarea 里（选区、光标、输入法都正常），
+     再把同样内容着好色放在底下，关掉 textarea 的文字颜色。 */
+  function hlJson(src) {
+    var re = /("(?:\\.|[^"\\])*")(\s*:)|("(?:\\.|[^"\\])*")|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)|\b(true|false|null)\b/g;
+    var out = "", last = 0, m;
+    while ((m = re.exec(src))) {
+      out += esc(src.slice(last, m.index));
+      if (m[1] !== undefined) {
+        out += '<span class="t-key">' + esc(m[1]) + "</span>" + esc(m[2]);
+      } else if (m[3] !== undefined) {
+        out += '<span class="t-str">' + esc(m[3]) + "</span>";
+      } else if (m[4] !== undefined) {
+        out += '<span class="t-num">' + esc(m[4]) + "</span>";
+      } else {
+        out += '<span class="t-lit">' + esc(m[5]) + "</span>";
+      }
+      last = re.lastIndex;
+    }
+    return out + esc(src.slice(last));
+  }
+
+  function paintSrc() {
+    var v = srcTextEl.value;
+    srcHlEl.innerHTML = hlJson(v) + "\n";
+    // 文件末尾的换行会多切出一个空段，减去它才是真实行数（和 wc -l 对得上）
+    var n = v === "" ? 0 : v.split("\n").length - (/\n$/.test(v) ? 1 : 0);
+    srcCountEl.textContent = n + " 行";
+    var g = [];
+    for (var i = 1; i <= n; i++) g.push(i);
+    srcGutterEl.textContent = g.join("\n");
+  }
+
+  /* JSON 视图显示的是当前分类那一个文件，和 data/<id>.json 一致。
+     正常维护都走结构编辑器；万一从别处粘了一大块进来，
+     边打边解析，点「应用到编辑器」把结构编辑器也刷新过来。 */
+  function checkSrc() {
+    paintSrc();
+    try {
+      var o = JSON.parse(srcTextEl.value);
+      if (!o || !Array.isArray(o.blocks)) throw new Error("顶层需要有 blocks 数组");
+      CATS[cur].blocks = o.blocks;
+      markDirty();
+      srcMsg.textContent = "解析成功，点「应用到编辑器」同步到表单";
+      srcMsg.className = "msg ok";
+    } catch (err) {
+      srcMsg.textContent = "JSON 有问题：" + err.message;
+      srcMsg.className = "msg err";
+    }
+  }
+
+  /* ===================== 导出 ===================== */
+  /* 只导出各分类的内容文件。categories.json 由手改维护——如果这里也生成一份，
+     你在那边手改的东西会被这个页面里的旧副本覆盖回去。 */
+  function fileList() {
+    return CATS.map(function (c) {
+      return { name: c.id + ".json", text: json({ blocks: c.blocks }) + "\n" };
+    });
+  }
+  function bytes(s) {
+    return s.length < 1024 ? s.length + " B"
+      : (s.length / 1024).toFixed(1) + " KB";
+  }
+  function download(name, text) {
+    var b = new Blob([text], { type: "application/json;charset=utf-8" });
+    var url = URL.createObjectURL(b);
+    var a = document.createElement("a");
+    a.href = url; a.download = name;
+    a.click();
+    // 别急着 revoke：某些浏览器还在读就会拿到一个失效的地址
+    setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
+  }
+  function openExport() {
+    $("files").innerHTML = fileList().map(function (f, i) {
+      return '<div class="fl"><span class="nm">data/' + esc(f.name) + '</span>' +
+        '<span class="sz">' + bytes(f.text) + '</span>' +
+        '<button data-dl="' + i + '">下载</button></div>';
+    }).join("");
+    $("exportModal").classList.add("show");
+  }
+
+  /* ===================== 事件绑定 ===================== */
+  editorEl.addEventListener("input", function (e) { onInput(e.target); });
+  editorEl.addEventListener("click", onClick);
+  catTabsEl.addEventListener("click", onCatTab);
+
+  $("viewSeg").addEventListener("click", function (e) {
+    var b = e.target.closest("[data-view]");
+    if (b) setView(b.dataset.view);
+  });
+  $("pvReload").addEventListener("click", function () {
+    syncPreview();
+  });
+
+  $("srcText").addEventListener("input", checkSrc);
+  // 滚动同步：底下那层着色的 <pre> 和最左的行号都不能自己滚，必须跟着 textarea 走
+  srcTextEl.addEventListener("scroll", function () {
+    var hl = srcHlEl.parentNode;
+    hl.scrollTop = srcTextEl.scrollTop;
+    hl.scrollLeft = srcTextEl.scrollLeft;
+    srcGutterEl.scrollTop = srcTextEl.scrollTop;
+  });
+  $("srcApply").addEventListener("click", function () {
+    try {
+      var o = JSON.parse(srcTextEl.value);
+      if (!o || !Array.isArray(o.blocks)) throw new Error("顶层需要有 blocks 数组");
+      CATS[cur].blocks = o.blocks;
+      renderEditor(); markDirty();
+      srcMsg.textContent = "已应用到编辑器"; srcMsg.className = "msg ok";
+    } catch (err) {
+      srcMsg.textContent = "应用失败：" + err.message; srcMsg.className = "msg err";
+    }
+  });
+
+  $("exportBtn").addEventListener("click", openExport);
+  $("dlAll").addEventListener("click", function () {
+    var fs = fileList();
+    fs.forEach(function (f, i) {
+      // 连续下载多个文件需要错开，否则浏览器会当成弹窗拦掉
+      setTimeout(function () { download(f.name, f.text); }, i * 350);
+    });
+  });
+  $("files").addEventListener("click", function (e) {
+    var b = e.target.closest("[data-dl]");
+    if (!b) return;
+    var f = fileList()[+b.dataset.dl];
+    download(f.name, f.text);
+  });
+  $("exportModal").addEventListener("click", function (e) {
+    if (e.target.id === "exportModal" || e.target.closest("[data-close]")) {
+      $("exportModal").classList.remove("show");
+    }
+  });
+
+  $("reloadBtn").addEventListener("click", function () {
+    if (dirty && !confirm("重新载入会丢弃当前所有未导出的改动，确定？")) return;
+    Promise.all([load(), loadPageHTML()]).then(function () {
+      draftBar.classList.remove("show");
+    });
+  });
+
+  $("draftUse").addEventListener("click", function () {
+    var d = readDraft();
+    if (d) { CATS = d; cur = 0; markDirty(); renderAll(); }
+    draftBar.classList.remove("show");
+  });
+  $("draftDrop").addEventListener("click", function () {
+    clearDraft(); draftBar.classList.remove("show");
+  });
+
+  window.addEventListener("beforeunload", function (e) {
+    if (!dirty) return;
+    e.preventDefault();
+    e.returnValue = "";
+  });
+
+  /* ===================== 启动 ===================== */
+  setView("split");
+  Promise.all([load(), loadPageHTML()]).then(function () {
+    syncPreview();          // 两个都齐了再出预览，避免 load 先完成时页面源码还没拿到
+    // 从 commands.html#git 跳过来时，直接落在同一个分类上
+    var want = location.hash.replace(/^#/, "");
+    for (var i = 0; i < CATS.length; i++) {
+      if (CATS[i].id === want) { cur = i; break; }
+    }
+    renderCatTabs(); renderEditor(); schedulePreview();
+    if (readDraft()) draftBar.classList.add("show");
+  });
+})();
+</script>
+</body>
+</html>

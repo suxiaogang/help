@@ -298,7 +298,7 @@ var TOOLS = [
 	/* 旧书签兼容 ------------------------------------------------------------
 	   原首页就是速查页，深链形如 index.html#git。拆分之后内容搬到了
 	   commands.html，这里把这类旧链接接过去，避免书签失效。
-	   COMMAND_CATS 与 commands.html 里的 DATA[].id 保持一致；
+	   COMMAND_CATS 与 data/categories.json 里的 id 保持一致；
 	   在那边新增分类时记得同步这里。 */
 	var COMMAND_CATS = ["bash", "git", "macos"];
 	var oldCat = location.hash.replace(/^#/, "");

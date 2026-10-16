@@ -1,0 +1,5 @@
+[
+	{ "id": "bash", "name": "Bash", "icon": "⌨️" },
+	{ "id": "git", "name": "Git", "icon": "🌿" },
+	{ "id": "macos", "name": "macOS", "icon": "🍎" }
+]

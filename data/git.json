@@ -1,0 +1,48 @@
+{
+	"blocks": [
+		{
+			"g": "新建仓库并推送到远端",
+			"items": [
+				{ "cmd": "echo \"# help\" >> README.md", "d": "生成 README.md 并写入一行标题" },
+				{ "cmd": "git init", "d": "在当前目录初始化仓库" },
+				{ "cmd": "git add README.md", "d": "把 README.md 加入暂存区" },
+				{ "cmd": "git commit -m \"first commit\"", "d": "提交，并写上提交信息" },
+				{ "cmd": "git remote add origin https://github.com/username/repository.git", "d": "关联远端仓库，把地址换成你自己的" },
+				{ "cmd": "git push -u origin master", "d": "首次推送并建立 upstream 关联" }
+			]
+		},
+		{
+			"g": "推送已有仓库",
+			"items": [
+				{ "cmd": "git remote add origin https://github.com/username/repository.git", "d": "关联远端仓库" },
+				{ "cmd": "git push -u origin master", "d": "推送当前分支" }
+			]
+		},
+		{
+			"g": "克隆仓库",
+			"items": [
+				{ "cmd": "git clone https://github.com/username/repository.git", "d": "克隆到与仓库同名的目录" },
+				{ "cmd": "git clone https://github.com/username/repository.git myLocalRepositoryName", "d": "克隆并指定本地目录名" }
+			]
+		},
+		{
+			"g": "日常提交",
+			"items": [
+				{ "cmd": "git add .", "d": "把当前目录下所有改动加入暂存区" },
+				{ "cmd": "git add -u", "d": "只把已被跟踪文件的改动加入暂存区" },
+				{ "cmd": "git status", "d": "查看当前改动与暂存状态" },
+				{ "cmd": "git commit -m \"msg\"", "d": "提交暂存区内容" },
+				{ "cmd": "git log --oneline", "d": "简洁地查看提交历史" },
+				{ "cmd": "git diff", "d": "查看尚未暂存的改动" },
+				{ "cmd": "git checkout -b feat", "d": "新建并切换到 feat 分支" },
+				{ "cmd": "git pull", "d": "拉取并合并远端更新" }
+			]
+		},
+		{
+			"g": "参考链接",
+			"items": [
+				{ "cmd": "https://www.kernel.org/pub/software/scm/git/docs/git-add.html", "d": "git add 官方文档" }
+			]
+		}
+	]
+}

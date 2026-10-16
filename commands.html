@@ -82,6 +82,14 @@
     }
     .back:hover { color: var(--accent); text-decoration: none; }
 
+    /* 维护入口：比「← 工具箱」再淡一档，不抢正文的视线 */
+    .toplinks { display: inline-flex; align-items: baseline; gap: 14px; }
+    .edit-link {
+      font-size: 12px; color: #5d6878; white-space: nowrap;
+      border-bottom: 1px dashed #3a4557;
+    }
+    .edit-link:hover { color: var(--accent); text-decoration: none; border-bottom-color: var(--accent-2); }
+
     .tabs {
       display: flex; gap: 4px;
       overflow-x: auto; scrollbar-width: none;
@@ -191,62 +199,6 @@
       font-size: 12px; line-height: 1.5; color: var(--muted);
     }
 
-    /* 快捷键：按键居中 */
-    .rows.keys .copy .code {
-      white-space: nowrap; text-align: center;
-      font-weight: 600; font-size: 12px;
-      background: var(--panel-2);
-    }
-
-    .rows .sub {
-      padding: 10px 12px 2px;
-      font-size: 11px; font-weight: 600; color: var(--muted);
-      letter-spacing: .3px;
-    }
-
-    /* 备注块（多行说明） */
-    .note { border-top: 1px solid var(--border-soft); padding: 12px; }
-    .note:first-child { border-top: 0; }
-    .note-title {
-      font-family: var(--mono); font-size: 12px; font-weight: 600;
-      color: var(--muted); margin-bottom: 6px;
-    }
-
-    .term {
-      position: relative;
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      font-family: var(--mono); font-size: 12px; line-height: 1.625;
-    }
-    .term pre {
-      margin: 0; padding: 10px 12px;
-      overflow-x: auto; white-space: pre; tab-size: 4;
-    }
-
-    .copy-inline {
-      position: absolute; top: 6px; right: 6px;
-      padding: 3px 8px;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      background: var(--panel-2); color: var(--text);
-      font: inherit; font-size: 12px; font-weight: 500; line-height: 16px;
-      cursor: pointer;
-      opacity: 0;
-      transition: opacity .12s, background-color .12s, border-color .12s;
-    }
-    .term:hover .copy-inline,
-    .copy-inline:focus-visible { opacity: 1; }
-    .copy-inline:hover { background: #232c39; border-color: #3a4557; }
-    .copy-inline[data-copied] {
-      opacity: 1;
-      background: var(--success-soft);
-      border-color: var(--accent-2); color: var(--success);
-    }
-
-    /* 触屏没有 hover，直接常显 */
-    @media (hover: none) { .copy-inline { opacity: 1; } }
-
     /* 页脚与各工具子页面一致：整条边框通栏，内容左对齐并带状态点。
        结构上与 .sticky 一样——外层负责边框，内层 .wrap 负责居中与留白。 */
     footer {
@@ -267,15 +219,12 @@
      *  滚动条，所以 1080px 以下两栏已无意义，直接堆叠。
      * ==================================================================== */
     @media (max-width: 1080px) {
-      .rows .row,
-      .rows.keys .row {
+      .rows .row {
         grid-template-columns: minmax(0, 1fr);
         gap: 2px; padding-bottom: 6px;
       }
       /* 说明文字与代码框左边框对齐：代码框边框落在 .copy 的内边距处 */
-      .rows .row .desc,
-      .rows.keys .row .desc { padding: 0 12px; font-size: 12px; }
-      .rows.keys .copy .code { text-align: left; }
+      .rows .row .desc { padding: 0 12px; font-size: 12px; }
     }
 
     @media (max-width: 720px) {
@@ -297,15 +246,13 @@
 
       /* 命令条已占满整行，纵向充裕而横向没有，改为折行显示，
          长命令不再需要左右拖动（复制内容取自 data-copy，不受折行影响） */
-      .copy .code,
-      .rows.keys .copy .code {
+      .copy .code {
         white-space: pre-wrap;
         overflow-wrap: anywhere;
         overflow-x: visible;
       }
 
-      .rows .row .desc,
-      .rows.keys .row .desc { padding: 0 10px; }
+      .rows .row .desc { padding: 0 10px; }
 
       .note { padding: 10px; }
       .term { font-size: 11.5px; }
@@ -318,7 +265,7 @@
 
     @media print {
       .sticky { position: static; }
-      .tabs, .copy .mark, .copy-inline, .back { display: none !important; }
+      .tabs, .copy .mark, .back, .edit-link { display: none !important; }
       .panel { display: block !important; }
       .group { break-inside: avoid; }
       .term pre { white-space: pre-wrap; }
@@ -332,7 +279,10 @@
 	<div class="wrap">
 		<div class="topbar">
 			<h1>常用命令速查</h1>
-			<a class="back" href="index.html">← 工具箱</a>
+			<span class="toplinks">
+				<a class="back" href="index.html">← 工具箱</a>
+				<a class="edit-link" id="editLink" href="commands-edit.html">编辑此页</a>
+			</span>
 			<span class="tagline">点击任意命令即可复制</span>
 		</div>
 		<nav class="tabs" id="tabs" role="tablist" aria-label="命令分类"></nav>
@@ -344,7 +294,7 @@
 
 <footer>
 	<div class="wrap foot-in">
-		<span class="dot"></span><span id="footNote">共 0 条内容</span>
+		<span class="dot"></span><span id="footNote">加载中…</span>
 	</div>
 </footer>
 
@@ -352,336 +302,25 @@
 
 <script>
 /* ==========================================================================
- *  ①  数据区 —— 日常只需要改这里
+ *  ①  数据区 —— 命令内容不在本文件里，在 data/ 目录下的 JSON
  * ========================================================================== *
  *
- *  DATA 是分类数组，每一项是一个分类（对应顶部一个 Tab）：
+ *  data/categories.json   分类清单（数组，顺序即顶部 Tab 的顺序）
+ *      [
+ *        { "id": "bash", "name": "Bash", "icon": "⌨️" },
+ *        ...
+ *      ]
  *
- *    { id, name, icon, blocks: [...] }
- *      id      锚点 / URL hash，同时也是 deep link，如 commands.html#git
- *      name    Tab 上显示的名字
- *      icon    Tab 上的小图标（emoji，可省略）
- *      blocks  该分类下的分组卡片数组
+ *  data/<id>.json         该分类的内容，形如 { "blocks": [ ... ] }
  *
- *  block 有两种写法：
+ *  数据格式详见 data/README.md。
  *
- *    1) 命令 / 快捷键列表
- *       { g: "分组标题", items: [...] }
- *
- *       item 里二选一：
- *         cmd   要复制的命令（渲染成可点击复制的代码条）
- *         k     要复制的快捷键（渲染成居中的按键条）
- *
- *       另外可选：
- *         d     右侧的说明文字
- *         h     这一条上面的小标题（用来给多条命令做段落分隔）
- *
- *    2) 纯文本备注（整段复制，保留缩进）
- *       { g: "分组标题", notes: [{ title: "小标题", text: "内容" }] }
- *
- *  想加一条命令，就在对应 items 里加一行 { cmd: "...", d: "..." } 即可。
+ *  · 加一条命令：在对应文件的 items 里加一项
+ *      { "cmd": "要复制的命令", "d": "右侧说明" }
+ *  · 加一个分类：在 categories.json 里加一项，再新建 data/<id>.json
  * ========================================================================== */
 
-var DATA = [
-	/* ---------------------------- Bash ---------------------------- */
-	{
-		id: "bash",
-		name: "Bash",
-		icon: "⌨️",
-		blocks: [
-			{
-				g: "文件与目录",
-				items: [
-					{ cmd: "pwd",       d: "显示当前所在目录（print working directory）" },
-					{ cmd: "ls",        d: "列出当前目录下的文件" },
-					{ cmd: "ls -alh",   d: "列出全部文件，含隐藏文件、权限、人类可读的大小" },
-					{ cmd: "cd /",      d: "进入根目录" },
-					{ cmd: "cd ~",      d: "回到自己的家目录（只敲 cd 也可以）" },
-					{ cmd: "cd ..",     d: "回到上一级目录" },
-					{ cmd: "cd -",      d: "回到刚才所在的目录" },
-					{ cmd: "cd /var/www", d: "直接进入某个完整路径（这里以 /var/www 为例）" },
-					{ cmd: "cp file foo",    d: "复制文件：把 file 复制成 foo，原文件保留" },
-					{ cmd: "cp -r dir foo",  d: "递归复制整个目录" },
-					{ cmd: "mv file foo",    d: "重命名：把 file 改名成 foo" },
-					{ cmd: "mv foo ~/Desktop", d: "移动：把 foo 移动到桌面（不改名）" },
-					{ cmd: "rm file",   d: "删除文件" },
-					{ cmd: "rmdir dir", d: "删除空目录" },
-					{ cmd: "rm -rf dir", d: "递归强制删除目录及其中所有内容，危险，务必确认路径" },
-					{ cmd: "mkdir music", d: "新建一个目录" },
-					{ cmd: "man man",   d: "查看某个命令的手册，这里是查看 man 自己" }
-				]
-			},
-			{
-				g: "压缩与解压",
-				items: [
-					{ cmd: "tar xvf wordpress.tar",        d: "解压 tar 格式的文件" },
-					{ cmd: "tar tvf myfile.tar",           d: "查看 tar 文件里包含哪些文件" },
-					{ cmd: "tar cf toole.tar tool",        d: "把 tool 目录打包成 toole.tar" },
-					{ cmd: "tar zcf vpser.tar.gz tool",    d: "打包并压缩成 .tar.gz" },
-					{ cmd: "tar jcvf /var/bak/www.tar.bz2 /var/www/", d: "创建 .tar.bz2，压缩率更高" },
-					{ cmd: "tar xjf www.tar.bz2",          d: "解压 .tar.bz2 格式" },
-					{ cmd: "gzip -d ge.tar.gz",            d: "把 .tar.gz 解压成 .tar" },
-					{ cmd: "unzip phpbb.zip",              d: "解压 zip 文件" }
-				]
-			},
-			{
-				g: "进程管理",
-				items: [
-					{ cmd: "ps -aux",              d: "查看进程状态" },
-					{ cmd: "ps -aux | grep nginx", d: "在所有进程中查找 nginx" },
-					{ cmd: "kill 1234",            d: "结束指定进程，1234 是 ps 里的 PID" },
-					{ cmd: "killall nginx",        d: "按程序名结束该程序的所有进程" }
-				]
-			},
-			{
-				g: "ps 输出字段含义",
-				notes: [
-					{
-						title: "ps -aux 每一列分别是什么",
-						text: "USER     进程所有者的用户名\n" +
-						      "PID      进程号，唯一标识该进程\n" +
-						      "%CPU     进程自最近一次刷新以来占用 CPU 时间的百分比\n" +
-						      "%MEM     进程使用内存的百分比\n" +
-						      "VSZ      进程使用的虚拟内存大小，单位 K\n" +
-						      "RSS      进程占用的物理内存总量，单位 K\n" +
-						      "TTY      进程相关的终端名\n" +
-						      "STAT     进程状态：R 运行或准备运行；S 睡眠；I 空闲；Z 冻结；\n" +
-						      "         D 不间断睡眠；W 进程没有驻留页；T 停止或跟踪\n" +
-						      "START    进程开始运行时间\n" +
-						      "TIME     进程使用的总 CPU 时间\n" +
-						      "COMMAND  被执行的命令行"
-					}
-				]
-			},
-			{
-				g: "资源占用查询",
-				items: [
-					{ cmd: "df -sh /home/wwwroot/*", d: "查看 /home/wwwroot/ 下各个目录的占用大小" },
-					{ cmd: "free -m",                d: "查看内存和 swap 使用情况（单位 MB）" },
-					{ cmd: "top",                    d: "实时查看程序的 CPU、内存占用" },
-					{ cmd: "netstat -ntl",           d: "查看端口占用情况" }
-				]
-			},
-			{
-				g: "用户管理",
-				items: [
-					{ cmd: "adduser vpser", d: "添加用户，这里新建一个名为 vpser 的用户" },
-					{ cmd: "deluser vpser", d: "删除用户" },
-					{ cmd: "passwd",        d: "修改密码，按提示输入，密码不显示" }
-				]
-			}
-		]
-	},
-
-	/* ---------------------------- Git ---------------------------- */
-	{
-		id: "git",
-		name: "Git",
-		icon: "🌿",
-		blocks: [
-			{
-				g: "新建仓库并推送到远端",
-				items: [
-					{ cmd: "echo \"# help\" >> README.md", d: "生成 README.md 并写入一行标题" },
-					{ cmd: "git init",                     d: "在当前目录初始化仓库" },
-					{ cmd: "git add README.md",            d: "把 README.md 加入暂存区" },
-					{ cmd: "git commit -m \"first commit\"", d: "提交，并写上提交信息" },
-					{ cmd: "git remote add origin https://github.com/username/repository.git", d: "关联远端仓库，把地址换成你自己的" },
-					{ cmd: "git push -u origin master",    d: "首次推送并建立 upstream 关联" }
-				]
-			},
-			{
-				g: "推送已有仓库",
-				items: [
-					{ cmd: "git remote add origin https://github.com/username/repository.git", d: "关联远端仓库" },
-					{ cmd: "git push -u origin master",   d: "推送当前分支" }
-				]
-			},
-			{
-				g: "克隆仓库",
-				items: [
-					{ cmd: "git clone https://github.com/username/repository.git",           d: "克隆到与仓库同名的目录" },
-					{ cmd: "git clone https://github.com/username/repository.git myLocalRepositoryName", d: "克隆并指定本地目录名" }
-				]
-			},
-			{
-				g: "日常提交",
-				items: [
-					{ cmd: "git add .",            d: "把当前目录下所有改动加入暂存区" },
-					{ cmd: "git add -u",           d: "只把已被跟踪文件的改动加入暂存区" },
-					{ cmd: "git status",           d: "查看当前改动与暂存状态" },
-					{ cmd: "git commit -m \"msg\"", d: "提交暂存区内容" },
-					{ cmd: "git log --oneline",    d: "简洁地查看提交历史" },
-					{ cmd: "git diff",             d: "查看尚未暂存的改动" },
-					{ cmd: "git checkout -b feat", d: "新建并切换到 feat 分支" },
-					{ cmd: "git pull",             d: "拉取并合并远端更新" }
-				]
-			},
-			{
-				g: "参考链接",
-				notes: [
-					{
-						title: "git add 官方文档",
-						text: "https://www.kernel.org/pub/software/scm/git/docs/git-add.html"
-					}
-				]
-			}
-		]
-	},
-
-	/* ---------------------------- macOS ---------------------------- */
-	{
-		id: "macos",
-		name: "macOS",
-		icon: "🍎",
-		blocks: [
-			{
-				g: "修饰键符号",
-				items: [
-					{ k: "⌘",  d: "Command 键" },
-					{ k: "⌃",  d: "Control 键" },
-					{ k: "⌥",  d: "Option 键" },
-					{ k: "⇧",  d: "Shift 键" },
-					{ k: "⇪",  d: "Caps Lock" },
-					{ k: "fn", d: "功能键" }
-				]
-			},
-			{
-				g: "文本处理",
-				items: [
-					{ k: "Command-B", d: "以粗体显示所选文本，或切换粗体开关" },
-					{ k: "Command-I", d: "以斜体显示所选文本，或切换斜体开关" },
-					{ k: "Command-U", d: "加下划线，或切换下划线开关" },
-					{ k: "Command-T", d: "显示或隐藏「字体」窗口" },
-					{ k: "fn-Delete", d: "向前删除，适用于便携式 Mac 的内建键盘" },
-					{ k: "fn-上箭头", d: "向上滚动一页，相当于 Page Up" },
-					{ k: "fn-下箭头", d: "向下滚动一页，相当于 Page Down" },
-					{ k: "fn-左箭头", d: "滚动至文稿开头，相当于 Home" },
-					{ k: "fn-右箭头", d: "滚动至文稿末尾，相当于 End" },
-					{ k: "Command-右箭头", d: "将插入点移至当前行的行尾" },
-					{ k: "Command-左箭头", d: "将插入点移至当前行的行首" },
-					{ k: "Command-下箭头", d: "将插入点移至文稿末尾" },
-					{ k: "Command-上箭头", d: "将插入点移至文稿开头" },
-					{ k: "Option-右箭头", d: "移至下一个单词的末尾" },
-					{ k: "Option-左箭头", d: "移至上一个单词的开头" },
-					{ k: "Option-Delete", d: "删除光标左侧的词，以及词后的空格或标点" },
-					{ k: "Command-Shift-右箭头", d: "选中插入点与当前行行尾之间的文本" },
-					{ k: "Command-Shift-左箭头", d: "选中插入点与当前行行首之间的文本" },
-					{ k: "Command-Shift-上箭头", d: "选中插入点与文稿开头之间的文本" },
-					{ k: "Command-Shift-下箭头", d: "选中插入点与文稿末尾之间的文本" },
-					{ k: "Shift-左箭头", d: "选择范围向左扩展一个字符" },
-					{ k: "Shift-右箭头", d: "选择范围向右扩展一个字符" },
-					{ k: "Shift-上箭头", d: "选择范围扩展到上一行相同水平位置" },
-					{ k: "Shift-下箭头", d: "选择范围扩展到下一行相同水平位置" },
-					{ k: "Shift-Option-右箭头", d: "扩展到当前词的词尾，再按一次扩展到后一词的词尾" },
-					{ k: "Shift-Option-左箭头", d: "扩展到当前词的词首，再按一次扩展到前一词的词首" },
-					{ k: "Shift-Option-下箭头", d: "扩展到当前段落的段尾" },
-					{ k: "Shift-Option-上箭头", d: "扩展到当前段落的段首" },
-					{ k: "Control-A", d: "移至行或段落的开头" },
-					{ k: "Control-E", d: "移至行或段落的末尾" },
-					{ k: "Control-B", d: "向后移动一个字符" },
-					{ k: "Control-D", d: "删除光标前的字符" },
-					{ k: "Control-F", d: "向前移动一个字符" },
-					{ k: "Control-H", d: "删除光标后的字符" },
-					{ k: "Control-K", d: "删除从光标前到行或段落末尾的所有内容" },
-					{ k: "Control-L", d: "将光标或所选内容置于可见区域中央" },
-					{ k: "Control-N", d: "下移一行" },
-					{ k: "Control-O", d: "在光标后插入一行" },
-					{ k: "Control-P", d: "上移一行" },
-					{ k: "Control-T", d: "调换光标前后的字符" },
-					{ k: "Control-V", d: "下移" },
-					{ k: "Command-{", d: "使所选内容左对齐" },
-					{ k: "Command-}", d: "使所选内容右对齐" },
-					{ k: "Command-|", d: "使所选内容居中对齐" },
-					{ k: "Command-Option-C", d: "拷贝所选项的格式设置到剪贴板" },
-					{ k: "Command-Option-V", d: "将某对象的样式应用于所选对象（粘贴样式）" },
-					{ k: "Command-Shift-Option-V", d: "将周围文本的样式应用于所插入对象（粘贴并匹配样式）" },
-					{ k: "Command-Control-V", d: "将格式设置应用于所选对象（粘贴标尺）" }
-				]
-			},
-			{
-				g: "Finder 快捷键",
-				items: [
-					{ k: "Command-A", d: "选择最前面的窗口中的所有文件" },
-					{ k: "Command-Option-A", d: "取消选择所有项" },
-					{ k: "Command-C", d: "拷贝选中的文件，再用「粘贴」或「移动」处理" },
-					{ k: "Command-D", d: "重复选中的文件" },
-					{ k: "Command-E", d: "推出" },
-					{ k: "Command-F", d: "查找任何匹配 Spotlight 属性的内容" },
-					{ k: "Command-I", d: "显示选中文件的「显示简介」窗口" },
-					{ k: "Command-Shift-C", d: "打开「电脑」窗口" },
-					{ k: "Command-Shift-D", d: "打开「桌面」文件夹" },
-					{ k: "Command-Shift-F", d: "显示「我的所有文件」窗口" },
-					{ k: "Command-Shift-G", d: "前往文件夹" },
-					{ k: "Command-Shift-H", d: "打开当前用户帐户的个人文件夹" },
-					{ k: "Command-Shift-I", d: "打开 iCloud Drive" },
-					{ k: "Command-Shift-K", d: "打开「网络」窗口" },
-					{ k: "Command-Shift-L", d: "打开「下载」文件夹" },
-					{ k: "Command-Shift-O", d: "打开「文稿」文件夹" },
-					{ k: "Command-Shift-R", d: "打开 AirDrop 窗口" },
-					{ k: "Command-Shift-U", d: "打开「实用工具」文件夹" },
-					{ k: "Command-Control-T", d: "添加到边栏（OS X Mavericks）" },
-					{ k: "Command-Option-I", d: "显示或隐藏「检查器」窗口" },
-					{ k: "Command-Control-I", d: "获得摘要信息" },
-					{ k: "Command-Option-P", d: "隐藏或显示路径栏" },
-					{ k: "Command-Option-S", d: "隐藏或显示边栏" },
-					{ k: "Command-/", d: "隐藏或显示状态栏" },
-					{ k: "Command-J", d: "调出「显示」选项" },
-					{ k: "Command-K", d: "连接到服务器" },
-					{ k: "Command-L", d: "为所选项制作替身" },
-					{ k: "Command-N", d: "新建 Finder 窗口" },
-					{ k: "Command-Shift-N", d: "新建文件夹" },
-					{ k: "Command-Option-N", d: "新建智能文件夹" },
-					{ k: "Command-O", d: "打开所选项" },
-					{ k: "Command-R", d: "显示替身的原身" },
-					{ k: "Command-T", d: "打开单个标签时显示或隐藏标签栏" },
-					{ k: "Command-Shift-T", d: "显示或隐藏 Finder 标签" },
-					{ k: "Command-Option-T", d: "显示或隐藏工具栏" },
-					{ k: "Command-V", d: "把剪贴板上的文本副本粘贴到当前位置" },
-					{ k: "Command-Option-V", d: "把剪贴板内容从原始位置移动到当前位置" },
-					{ k: "Command-Option-Y", d: "查看选中文件的快速查看幻灯片" },
-					{ k: "Command-1", d: "以图标显示" },
-					{ k: "Command-2", d: "以列表方式显示" },
-					{ k: "Command-3", d: "以分栏方式显示" },
-					{ k: "Command-4", d: "以 Cover Flow 方式显示（v10.5 或更高版本）" },
-					{ k: "Command-,", d: "打开 Finder 偏好设置" },
-					{ k: "Command-[", d: "前往上一文件夹" },
-					{ k: "Command-]", d: "前往下一文件夹" },
-					{ k: "Command-上箭头", d: "打开包含当前文件夹的文件夹" },
-					{ k: "Command-Control-上箭头", d: "在新窗口中打开包含当前文件夹的文件夹" },
-					{ k: "Command-下箭头", d: "打开高亮显示的项目" },
-					{ k: "右箭头", d: "列表视图中打开所选文件夹" },
-					{ k: "左箭头", d: "列表视图中关闭所选文件夹" },
-					{ k: "Option-点按显示三角形", d: "列表视图中打开所选文件夹内的所有文件夹" },
-					{ k: "Option-连按", d: "在单独窗口中打开文件夹，并关闭当前窗口" },
-					{ k: "Command-连按", d: "在单独标签或窗口中打开文件夹" },
-					{ k: "Command-点按窗口标题", d: "查看包含当前窗口的文件夹" },
-					{ k: "Command-Delete", d: "移至废纸篓" },
-					{ k: "Command-Shift-Delete", d: "清倒废纸篓" },
-					{ k: "Command-Shift-Option-Delete", d: "清倒废纸篓，不显示确认对话框" },
-					{ k: "空格键", d: "快速查看选中的文件（等同于 Command-Y）" },
-					{ k: "拖移时按 Command", d: "将项目移至其他宗卷或位置，按住时指针会改变" },
-					{ k: "拖移时按 Option", d: "拷贝拖移的项目，按住时指针会改变" },
-					{ k: "拖移时按 Command-Option", d: "为拖移的项目创建替身，按住时指针会改变" }
-				]
-			},
-			{
-				g: "官方文档",
-				notes: [
-					{
-						title: "Apple 快捷键支持页面",
-						text: "https://support.apple.com/zh-cn/HT201236"
-					}
-				]
-			}
-		]
-	}
-];
-
-/* ==========================================================================
- *  ②  小工具链接区 —— 以后新增工具页面，在这里加一行即可
- *      { name: "显示名", desc: "一句话说明", href: "相对路径", icon: "emoji" }
- * ========================================================================== */
+var DATA = [];
 
 /* ==========================================================================
  *  ②  渲染逻辑 —— 一般不需要改动
@@ -705,7 +344,7 @@ var DATA = [
 
 	// 一条数据实际要复制的文本
 	function copyTextOf(item) {
-		return item.cmd != null ? item.cmd : (item.k != null ? item.k : "");
+		return item.cmd == null ? "" : item.cmd;
 	}
 
 	// Octicon: copy
@@ -720,10 +359,10 @@ var DATA = [
 		'<path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z"></path></svg>';
 
 	/* ---------- 渲染：可复制的代码条 ---------- */
-	function copyBtnHTML(item, extraClass) {
+	function copyBtnHTML(item) {
 		var text = copyTextOf(item);
-		return '<button type="button" class="copy' + (extraClass ? " " + extraClass : "") +
-			'" data-copy="' + esc(text) + '" title="点击复制：' + esc(text) + '"' +
+		return '<button type="button" class="copy" data-copy="' + esc(text) +
+			'" title="点击复制：' + esc(text) + '"' +
 			' aria-label="复制 ' + esc(text) + '">' +
 			'<code class="code">' + esc(text) + "</code>" +
 			'<span class="mark" aria-hidden="true">' +
@@ -733,52 +372,29 @@ var DATA = [
 			"</button>";
 	}
 
+	/* 一条内容：{ cmd, d }，点一下复制 cmd。
+	 * 之前还有 k（快捷键，居中按键条）、h（条目内小标题）和多行备注块，
+	 * 现在统一成这一种单行结构。 */
 	function itemHTML(item) {
-		var html = "";
-		if (item.h) html += '<div class="sub">' + esc(item.h) + "</div>";
-		html += '<div class="row">' + copyBtnHTML(item, item.k != null ? "key" : "") +
+		return '<div class="row">' + copyBtnHTML(item) +
 			'<div class="desc">' + esc(item.d || "") + "</div>" +
-			"</div>";
-		return html;
-	}
-
-	function noteHTML(note) {
-		return '<div class="note">' +
-			(note.title ? '<div class="note-title">' + esc(note.title) + "</div>" : "") +
-			'<div class="term">' +
-				'<button type="button" class="copy-inline" data-copy-inline="' + esc(note.text) + '">' +
-					"复制整段" +
-				"</button>" +
-				"<pre>" + esc(note.text) + "</pre>" +
-			"</div>" +
 			"</div>";
 	}
 
 	function blockHTML(block) {
-		var isKeys = !!(block.items && block.items.length && block.items[0].k != null);
-		var body, count;
-
-		if (block.items) {
-			count = block.items.length;
-			body = '<div class="rows' + (isKeys ? " keys" : "") + '">' +
-				block.items.map(itemHTML).join("") + "</div>";
-		} else {
-			var notes = block.notes || [];
-			count = notes.length;
-			body = notes.map(noteHTML).join("");
-		}
-
+		var items = block.items || [];
 		return '<section class="group">' +
 			'<div class="group-head"><h3>' + esc(block.g || "") + "</h3>" +
-				'<span class="meta">' + count + (block.items ? " 条" : " 段") + "</span></div>" +
-			'<div class="group-body">' + body + "</div>" +
-			"</section>";
+				'<span class="meta">' + items.length + " 条</span></div>" +
+			'<div class="group-body">' +
+				'<div class="rows">' + items.map(itemHTML).join("") + "</div>" +
+			"</div></section>";
 	}
 
 	function panelHTML(cat) {
 		var blocks = cat.blocks || [];
 		var total = blocks.reduce(function (n, b) {
-			return n + (b.items ? b.items.length : (b.notes || []).length);
+			return n + (b.items || []).length;
 		}, 0);
 
 		return '<section class="panel" id="panel-' + esc(cat.id) + '" role="tabpanel"' +
@@ -805,7 +421,7 @@ var DATA = [
 
 		var grand = DATA.reduce(function (n, c) {
 			return n + (c.blocks || []).reduce(function (m, b) {
-				return m + (b.items ? b.items.length : (b.notes || []).length);
+				return m + (b.items || []).length;
 			}, 0);
 		}, 0);
 		footEl.textContent = DATA.length + " 个分类 · " + grand + " 条内容 · 点击任意命令即可复制";
@@ -838,6 +454,10 @@ var DATA = [
 		if (opts.updateHash !== false && location.hash !== "#" + id) {
 			history.replaceState(null, "", "#" + id);
 		}
+
+		/* 「编辑此页」带上当前分类，点进去就落在同一个 Tab 上 */
+		var edit = document.getElementById("editLink");
+		if (edit) edit.href = "commands-edit.html#" + id;
 	}
 
 	/* ---------- 复制 ---------- */
@@ -867,13 +487,10 @@ var DATA = [
 
 	function flash(btn, label) {
 		if (!btn) return;
-		var prev = btn.textContent;
 		btn.setAttribute("data-copied", "1");
-		if (btn.classList.contains("copy-inline")) btn.textContent = "已复制 ✓";
 		clearTimeout(btn._t);
 		btn._t = setTimeout(function () {
 			btn.removeAttribute("data-copied");
-			if (btn.classList.contains("copy-inline")) btn.textContent = prev;
 		}, 1200);
 		toastEl.textContent = (label.length > 40 ? label.slice(0, 40) + "…" : label) + " 已复制";
 	}
@@ -915,9 +532,6 @@ var DATA = [
 	document.addEventListener("click", function (e) {
 		if (!e.target.closest) return;
 
-		var inline = e.target.closest("[data-copy-inline]");
-		if (inline) { handleCopy(inline, inline.getAttribute("data-copy-inline")); return; }
-
 		var btn = e.target.closest("[data-copy]");
 		if (btn) handleCopy(btn, btn.getAttribute("data-copy"));
 	});
@@ -927,10 +541,32 @@ var DATA = [
 		activate(location.hash.replace(/^#/, ""));
 	});
 
+	/* ---------- 数据加载 ----------
+	 * 内容是异步取回来的，所以渲染要等数据到位。
+	 * 一次性把所有分类并行取完再渲染：分类数不多（每个几 KB），
+	 * 换来的是切 Tab 依旧是同步的，不用在每个 Tab 上做加载态。
+	 * 新增分类时不必改这里——清单和文件名都是自描述的。
+	 */
+	function loadData() {
+		return fetch("data/categories.json")
+			.then(function (r) { return r.json(); })
+			.then(function (cats) {
+				return Promise.all(cats.map(function (c) {
+					return fetch("data/" + c.id + ".json").then(function (r) { return r.json(); });
+				})).then(function (bodies) {
+					DATA = cats.map(function (c, i) {
+						return { id: c.id, name: c.name, icon: c.icon, blocks: bodies[i].blocks };
+					});
+				});
+			});
+	}
+
 	/* ---------- 启动 ---------- */
-	render();
-	tabEls = [].slice.call(tabsEl.querySelectorAll(".tab"));
-	activate(location.hash.replace(/^#/, "") || (DATA[0] && DATA[0].id) || "");
+	loadData().then(function () {
+		render();
+		tabEls = [].slice.call(tabsEl.querySelectorAll(".tab"));
+		activate(location.hash.replace(/^#/, "") || (DATA[0] && DATA[0].id) || "");
+	});
 })();
 </script>
 </body>
