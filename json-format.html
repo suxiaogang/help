@@ -1,0 +1,1234 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>JSON 格式化 / 校验</title>
+  <meta name="description" content="JSON 格式化、压缩与校验：错误定位到行列，右侧带行号、语法高亮、可折叠的预览，纯前端处理，数据不上传" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23171c24'/%3E%3Ctext x='16' y='23' font-size='18' font-weight='bold' font-family='ui-monospace,Menlo,monospace' fill='%233dd68c' text-anchor='middle'%3E%3E_%3C/text%3E%3C/svg%3E" />
+  <style>
+    /* 与各工具子页面共用同一套色板，改这里即可整体换肤 */
+    :root {
+      --bg: #0e1116;
+      --panel: #171c24;
+      --panel-2: #1e2632;
+      --border: #2a3340;
+      --text: #e8edf4;
+      --muted: #8b97a8;
+      --accent: #3dd68c;
+      --accent-2: #2bb673;
+      --warn: #ffb340;
+      --radius: 10px;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+              "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; }
+    /* 多处用 hidden 切换显隐，而这些元素又自带 display 规则，
+       不加这一条的话 hidden 会被作者样式盖掉，看上去「没反应」 */
+    [hidden] { display: none !important; }
+
+    body {
+      background: var(--bg); color: var(--text);
+      font-family: var(--sans); font-size: 13px;
+      display: flex; flex-direction: column; overflow: hidden;
+    }
+
+    header {
+      flex: 0 0 auto; padding: 11px 22px;
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    }
+    header h1 { font-size: 16px; margin: 0; font-weight: 600; letter-spacing: .3px; }
+    header .hint { font-size: 12px; color: var(--muted); }
+
+    .layout {
+      flex: 1 1 auto;
+      display: grid;
+      grid-template-columns: minmax(340px, 380px) minmax(0, 1fr);
+      grid-template-rows: minmax(0, 1fr);
+      min-height: 0;
+    }
+    .column { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+    .column.left { border-right: 1px solid var(--border); }
+
+    .col-head {
+      flex: 0 0 auto; padding: 9px 16px;
+      font-size: 12px; font-weight: 600; color: var(--muted); letter-spacing: .5px;
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 10px; border-bottom: 1px solid var(--border);
+    }
+    .col-head .actions { display: flex; gap: 6px; align-items: center; }
+
+    .scroll {
+      flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden;
+      border-top: 1px solid var(--border);
+    }
+    /* 左栏底部的控件区：高度随内容，屏幕太矮时自己滚动，把空间让给输入框 */
+    .scroll.fixed { flex: 0 1 auto; max-height: 55%; }
+
+    button {
+      font: inherit; font-size: 12px; padding: 6px 12px;
+      border-radius: 7px; border: 1px solid var(--border);
+      background: var(--panel-2); color: var(--text);
+      cursor: pointer; white-space: nowrap;
+      transition: background .15s, border-color .15s, opacity .15s;
+    }
+    button:hover:not(:disabled) { background: #232c39; border-color: #3a4557; }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+    button.primary { background: var(--accent); border-color: var(--accent); color: #062315; font-weight: 600; }
+    button.primary:hover:not(:disabled) { background: var(--accent-2); border-color: var(--accent-2); }
+    button.mini { padding: 4px 9px; font-size: 11px; }
+
+    select {
+      font: inherit; font-size: 12px;
+      background: var(--panel-2); color: var(--text);
+      border: 1px solid var(--border); border-radius: 7px;
+      padding: 7px 10px; cursor: pointer; width: 100%;
+    }
+    select.mini { width: auto; padding: 3px 6px; font-size: 11px; }
+
+    /* ---- 左栏：输入框 ---- */
+    .editor {
+      flex: 1 1 auto; min-height: 120px;
+      padding: 12px 18px; display: flex;
+    }
+    /* 行高写死 18px：定位错误行时靠它把行号换算成 scrollTop（关闭自动换行才成立） */
+    textarea {
+      flex: 1 1 auto; width: 100%; resize: none;
+      background: var(--panel); color: var(--text);
+      border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 10px 12px; outline: none;
+      font: 12px/18px var(--mono);
+      white-space: pre; overflow: auto; tab-size: 2;
+      transition: border-color .2s, background-color .2s;
+    }
+    textarea::placeholder { color: #566174; }
+    textarea:focus { border-color: var(--accent); }
+    textarea.bad, textarea.bad:focus { border-color: var(--warn); }
+    textarea.dragover { border-color: var(--accent); background: rgba(61, 214, 140, .06); }
+
+    .panel { padding: 16px 18px 12px; }
+    .group + .group { margin-top: 18px; }
+    .group-title {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 8px; font-size: 11.5px; font-weight: 600; color: var(--muted);
+      letter-spacing: .4px; margin-bottom: 9px;
+    }
+    .group-title small { color: var(--muted); font-weight: 400; margin-left: 5px; }
+
+    .seg { display: grid; gap: 8px; }
+    .seg.c2 { grid-template-columns: repeat(2, 1fr); }
+    .seg button { padding: 8px 2px; font-size: 12px; }
+    .seg button.on { background: var(--accent); border-color: var(--accent); color: #062315; font-weight: 600; }
+    .seg.actions-seg button { padding: 10px 2px; font-size: 13px; }
+
+    .hint-line { margin-top: 7px; font-size: 11px; line-height: 1.5; color: var(--muted); }
+    .hint-line b { color: var(--text); font-weight: 600; }
+    .hint-line code { font-family: var(--mono); color: var(--text); }
+    .hint-line.ok { color: var(--accent); }
+    .hint-line.warn { color: var(--warn); }
+    .hint-line + .hint-line { margin-top: 4px; }
+
+    /* 出错位置的上下文片段：长单行 JSON 里光有行列号不好找 */
+    .ctx {
+      margin-top: 7px; padding: 6px 8px; overflow: hidden; white-space: pre;
+      background: var(--panel); border: 1px solid var(--border); border-radius: 7px;
+      font-family: var(--mono); font-size: 11px; color: var(--muted);
+    }
+    .ctx mark {
+      background: rgba(255, 179, 64, .25); color: var(--warn);
+      border-radius: 2px; padding: 0 1px;
+    }
+
+    /* ---- 右栏：提示条 ---- */
+    .errbar {
+      flex: 0 0 auto; display: flex; align-items: flex-start; gap: 10px;
+      padding: 8px 16px; font-size: 12px; line-height: 1.5; color: var(--warn);
+      background: rgba(255, 179, 64, .10);
+      border-bottom: 1px solid rgba(255, 179, 64, .35);
+    }
+    .errbar .t { flex: 1 1 auto; min-width: 0; word-break: break-all; }
+    .notebar {
+      flex: 0 0 auto; padding: 6px 16px; font-size: 11px; line-height: 1.5;
+      color: var(--muted); background: var(--panel);
+      border-bottom: 1px solid var(--border);
+    }
+
+    /* ---- 右栏：只读预览 ---- */
+    .view {
+      flex: 1 1 auto; min-height: 0; position: relative;
+      overflow: auto; background: var(--bg);
+      font: 12px/20px var(--mono);
+    }
+    .empty {
+      position: absolute; inset: 0; padding: 24px;
+      display: flex; align-items: center; justify-content: center;
+      text-align: center; color: var(--muted);
+      font: 12px/1.8 var(--sans);
+    }
+    /* 宽度取最宽的一行：横向滚动时每行同宽，行号列才能 sticky 贴边 */
+    .lines { min-width: max-content; padding: 6px 0 24px; --d: 3; }
+
+    .ln { display: flex; min-height: 20px; white-space: pre; }
+    .ln.h { display: none; }
+    .ln:hover { background: rgba(255, 255, 255, .035); }
+    /* 行号用 ::before + data-n：不是真实文本，鼠标框选复制时不会混进去 */
+    .ln::before {
+      content: attr(data-n);
+      flex: 0 0 auto; position: sticky; left: 0; z-index: 1;
+      width: calc(var(--d) * 1ch); box-sizing: content-box;
+      padding: 0 12px 0 10px; margin-right: 8px; text-align: right;
+      color: #566174; background: var(--bg);
+      border-right: 1px solid var(--border);
+      user-select: none; -webkit-user-select: none;
+    }
+    .ln .tg {
+      flex: 0 0 16px; width: 16px; text-align: center; font-style: normal;
+      font-size: 10px; color: var(--muted); cursor: pointer;
+      user-select: none; -webkit-user-select: none;
+    }
+    .ln .tg::before { content: "\25BE"; }
+    .ln.folded .tg::before { content: "\25B8"; }
+    .ln .tg:hover { color: var(--accent); }
+    .ln:not(.fd) > .cd { margin-left: 16px; }
+    .cd { flex: 0 0 auto; padding-right: 24px; color: #a7b3c4; }
+
+    /* 语法高亮配色只在预览里用，不进 :root，保证 :root 与全站一字不差 */
+    .cd .k { color: #6cb6ff; }
+    .cd .s { color: #8fd694; }
+    .cd .n { color: #f0a868; }
+    .cd .b { color: #c792ea; }
+    .cd .z { color: #ff8a80; }
+
+    /* 折叠后：开括号后面显示「…}」与项数；展开时这两个都不可见 */
+    .ph, .cnt { display: none; cursor: pointer; }
+    .ph { color: var(--muted); }
+    .cnt { margin-left: 10px; font-size: 11px; color: #566174; }
+    .ln.folded .ph, .ln.folded .cnt { display: inline; }
+    .ph:hover { color: var(--accent); }
+
+    .foot-meta {
+      flex: 1 1 auto; min-width: 0;
+      display: flex; gap: 16px; flex-wrap: wrap; align-items: center;
+      font-family: var(--mono); font-size: 11px; color: var(--muted);
+    }
+    .foot-meta .k { color: var(--muted); }
+    .foot-meta .v { color: var(--text); margin-left: 5px; }
+    .foot-meta .v.hl { color: var(--accent); font-weight: 600; }
+    .foot-status { flex: 0 0 auto; margin-left: 16px; text-align: right; }
+    .foot-status.warn { color: var(--warn); }
+
+    footer {
+      flex: 0 0 auto; padding: 9px 20px;
+      border-top: 1px solid var(--border);
+      font-size: 12px; color: var(--muted);
+      display: flex; align-items: center; gap: 8px;
+    }
+    footer .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); flex: 0 0 auto; }
+
+    ::-webkit-scrollbar { width: 9px; height: 9px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #2c3542; border-radius: 5px; }
+    ::-webkit-scrollbar-thumb:hover { background: #3a4557; }
+    ::-webkit-scrollbar-corner { background: transparent; }
+
+    @media (max-width: 820px) {
+      html, body { height: auto; }
+      body { overflow: visible; }
+      .layout { grid-template-columns: 1fr; grid-template-rows: auto auto; }
+      .column.left { border-right: none; border-bottom: 1px solid var(--border); flex: 0 0 auto; }
+      .scroll, .scroll.fixed { overflow: visible; max-height: none; }
+      .editor { flex: 0 0 auto; height: 300px; }
+      /* 单栏时整页滚动，预览要有自己的固定高度，否则会随内容无限拉长 */
+      .view { flex: 0 0 auto; height: 70vh; }
+      .col-head { flex-wrap: wrap; padding: 9px 12px; }
+      header { padding: 11px 14px; }
+      header h1 { font-size: 15px; }
+    }
+    @media (max-width: 720px) {
+      header .hint { display: none; }
+      .foot-meta { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>🧾 JSON 格式化 / 校验</h1>
+    <span class="hint">实时校验 · 错误定位到行列 · 语法高亮 · 可折叠 · 纯前端处理，JSON 不上传 · 可拖入 .json 文件</span>
+  </header>
+
+  <div class="layout">
+
+    <!-- ============ 左列 ============ -->
+    <section class="column left">
+      <div class="col-head">
+        <span>输入</span>
+        <div class="actions">
+          <button type="button" class="mini" id="sampleBtn">载入示例</button>
+          <button type="button" class="mini" id="clearBtn" disabled>清空</button>
+        </div>
+      </div>
+
+      <div class="editor">
+        <textarea id="src" spellcheck="false" autocomplete="off" autocapitalize="off" wrap="off"
+                  placeholder="在此粘贴或输入 JSON，例如：&#10;{&quot;name&quot;: &quot;示例&quot;, &quot;list&quot;: [1, 2, 3]}"></textarea>
+      </div>
+
+      <div class="scroll fixed">
+        <div class="panel">
+
+          <div class="group">
+            <div class="group-title"><span>缩进</span><small>格式化结果与右侧预览共用</small></div>
+            <div class="seg c2">
+              <button type="button" id="ind2" class="on">2 空格</button>
+              <button type="button" id="ind4">4 空格</button>
+            </div>
+          </div>
+
+          <div class="group">
+            <div class="group-title"><span>操作</span></div>
+            <div class="seg c2 actions-seg">
+              <button type="button" class="primary" id="fmtBtn">格式化</button>
+              <button type="button" id="minBtn">压缩</button>
+            </div>
+            <div class="hint-line" id="statusLine"></div>
+          </div>
+
+          <div class="group">
+            <div class="group-title"><span>说明</span></div>
+            <div class="hint-line">「格式化」「压缩」会直接改写上方输入框（可用 ⌘Z / Ctrl+Z 撤销）；右侧预览始终是格式化后的结果。</div>
+            <div class="hint-line">数字、键的顺序、重复的键、转义写法都按原文输出，不经 <code>JSON.parse</code> 再序列化，所以 <code>12345678901234567890</code> 这类大数不会失真。</div>
+            <div class="hint-line">只接受标准 JSON：不能有注释、尾逗号、单引号。</div>
+            <div class="hint-line">限制：输入 ≤ 10 MB，嵌套 ≤ 256 层；预览最多渲染前 50,000 行（超出时预览顶部会提示，复制与格式化仍用完整结果）。</div>
+            <div class="hint-line">命令行对照：<code>jq . in.json</code>（格式化）、<code>jq -c . in.json</code>（压缩）、<code>python3 -m json.tool in.json</code>。</div>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 右列 ============ -->
+    <section class="column right">
+      <div class="col-head">
+        <span>预览</span>
+        <div class="actions">
+          <select class="mini" id="depthSel" title="预览的折叠层级（编辑后会沿用）">
+            <option value="all">全部展开</option>
+            <option value="1">展开 1 层</option>
+            <option value="2">展开 2 层</option>
+            <option value="3">展开 3 层</option>
+            <option value="4">展开 4 层</option>
+            <option value="5">展开 5 层</option>
+          </select>
+          <button type="button" class="mini" id="copyBtn" disabled>复制</button>
+        </div>
+      </div>
+
+      <div class="errbar" id="errBar" hidden>
+        <span class="t" id="errText"></span>
+        <button type="button" class="mini" id="jumpBtn">定位</button>
+      </div>
+      <div class="notebar" id="noteBar" hidden><span id="noteText"></span></div>
+
+      <div class="view" id="view">
+        <div class="empty" id="empty"><span id="emptyText">合法的 JSON 会在这里显示格式化结果<br />带行号与语法高亮，点击 ▾ 可折叠对象和数组</span></div>
+        <div class="lines" id="lines"></div>
+      </div>
+    </section>
+  </div>
+
+  <footer>
+    <span class="dot"></span>
+    <span class="foot-meta" id="metaRow" hidden>
+      <span><span class="k">行数</span><span class="v hl" id="mLines">—</span></span>
+      <span><span class="k">层级</span><span class="v" id="mDepth">—</span></span>
+      <span><span class="k">压缩后</span><span class="v" id="mMini">—</span></span>
+    </span>
+    <span class="foot-status" id="statusText">等待输入 JSON…</span>
+  </footer>
+
+<script>
+(function () {
+  "use strict";
+
+  /* =========================================================
+     设计要点（都是踩过的坑，改之前先看）
+
+     1. 不用 JSON.parse 的结果来输出。JSON.parse 会把 12345678901234567890
+        变成 12345678901234567000、把 "1","2" 这种整数键提到最前面、吞掉重复键，
+        格式化工具若这样做就是在悄悄改用户的数据。所以页内自带一个严格的
+        扫描器，只记录每个 token 在原文里的起止位置，输出时按原文切片。
+     2. 错误位置先从 JSON.parse 的报错里解析（V8 新版带 position/line column，
+        Firefox 带 line column）。但 Safari 和 V8 的部分报错根本不带位置，
+        所以解析不到时用扫描器自己算的位置兜底；两边不一致时以 JSON.parse
+        为准，并在提示里写「附近」。中文原因说明来自扫描器。
+     3. 预览是「行数组 + 每行一个 div」，折叠 = 给区间内的行加 .h。
+        大文档按帧分片渲染（每片约 12ms），不会一帧卡死；不做虚拟滚动，
+        所以设了 50,000 行的渲染上限。
+     ========================================================= */
+
+  var $ = function (id) { return document.getElementById(id); };
+
+  function setStatus(t, warn) {
+    var el = $("statusText");
+    el.textContent = t;
+    el.className = "foot-status" + (warn ? " warn" : "");
+  }
+
+  function humanSize(n) {
+    if (n < 1024) return n + " B";
+    if (n < 1048576) return (n / 1024).toFixed(1) + " KB";
+    return (n / 1048576).toFixed(2) + " MB";
+  }
+  function blobSize(s) { return new Blob([s]).size; }
+
+  // ---- 限制 ----
+  var MAX_CHARS = 10 * 1024 * 1024;
+  var MAX_RENDER_LINES = 50000;
+  var MAX_DEPTH = 256;
+
+  // ---- token 类型 ----
+  var T_LB = 1, T_RB = 2, T_LK = 3, T_RK = 4, T_COLON = 5, T_COMMA = 6,
+      T_STR = 7, T_NUM = 8, T_TRUE = 9, T_FALSE = 10, T_NULL = 11, T_BAD = 12;
+
+  // ---- 语法状态 ----
+  var S_VALUE = 0,      // 期待一个值（顶层开头 / 冒号之后）
+      S_ARR_FIRST = 1,  // 刚读到 [ ：值或 ]
+      S_OBJ_FIRST = 2,  // 刚读到 { ：属性名或 }
+      S_OBJ_KEY = 3,    // 对象里逗号之后：必须是属性名
+      S_COLON = 4,      // 属性名之后：必须是冒号
+      S_AFTER = 5,      // 一个值结束：逗号或闭合括号
+      S_END = 6,        // 顶层值已结束
+      S_ARR_NEXT = 7;   // 数组里逗号之后：必须是值
+
+  // ---- 输出行类型 ----
+  var K_SCALAR = 0, K_OPEN = 1, K_EMPTY = 2, K_CLOSE = 3;
+
+  var TYPE_NAME = {
+    1: "「{」", 2: "「}」", 3: "「[」", 4: "「]」", 5: "「:」", 6: "「,」",
+    7: "一个字符串", 8: "一个数字", 9: "true", 10: "false", 11: "null"
+  };
+
+  // 中文输入法下最常见的全角符号 → 应换成的半角符号
+  var FULLWIDTH = {
+    "，": ",", "、": ",", "：": ":",
+    "“": "\"", "”": "\"", "‘": "\"", "’": "\"",
+    "｛": "{", "｝": "}", "［": "[", "］": "]", "【": "[", "】": "]"
+  };
+
+  var SPECIAL_SPACE = /^[\s\u200b-\u200d\u2060\ufeff]/;
+
+  function badText(w) {
+    var c = w.charAt(0);
+    if (FULLWIDTH.hasOwnProperty(c)) return "中文/全角符号「" + c + "」（请改用英文半角的「" + FULLWIDTH[c] + "」）";
+    if (c === "'") return "单引号（JSON 的字符串只能用双引号）";
+    if (c === "/") return "注释（JSON 不支持注释）";
+    if (w === "undefined" || w === "NaN" || w === "Infinity") return "「" + w + "」（JSON 里没有这个值，可改用 null 或字符串）";
+    if (SPECIAL_SPACE.test(c)) return "特殊的空白字符（如全角空格、不换行空格，请删除或换成普通空格）";
+    if (/^[A-Za-z_$]/.test(c)) return "无法识别的文本「" + w + "」（除 true / false / null 外，文本必须放进双引号）";
+    return "无法识别的字符「" + c + "」";
+  }
+
+  function found(type, word, forKey) {
+    if (type === T_BAD) {
+      if (forKey && /^[A-Za-z_$]/.test(word)) return "但这里是没加引号的属性名「" + word + "」（应写成 \"" + word + "\"）";
+      return "但这里是" + badText(word);
+    }
+    return "但这里出现了" + TYPE_NAME[type];
+  }
+
+  function isDigit(c) { return c >= 48 && c <= 57; }
+  function isHex(c) { return (c >= 48 && c <= 57) || (c >= 65 && c <= 70) || (c >= 97 && c <= 102); }
+  function isWordStart(c) { return (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c === 95 || c === 36; }
+  function isWordChar(c) { return isWordStart(c) || isDigit(c); }
+
+  function lineCol(s, pos) {
+    var line = 1, last = -1, k = s.indexOf("\n");
+    while (k !== -1 && k < pos) { line++; last = k; k = s.indexOf("\n", k + 1); }
+    return { line: line, col: pos - last };
+  }
+
+  function lineColToOffset(s, line, col) {
+    var off = 0, k;
+    for (k = 1; k < line; k++) {
+      off = s.indexOf("\n", off);
+      if (off === -1) return s.length;
+      off++;
+    }
+    return Math.min(off + col - 1, s.length);
+  }
+
+  /* =========================================================
+     扫描器：一次遍历同时做分词与语法检查（按出现顺序报第一处错误，
+     不会出现「先报了后面的词法错，漏掉前面的语法错」）。
+     合法时返回 token 表；非法时抛 { pos, msg, limit }。
+     ========================================================= */
+  function scan(s) {
+    var n = s.length;
+    var tt = [], ts = [], te = [];            // token 类型 / 起 / 止
+    var openL = [], closeL = [], cntL = [];   // 括号配对与项数
+    var stack = [], cstack = [];              // 未闭合括号的 token 下标 / 已完成项数
+    var state = S_VALUE, maxDepth = 0;
+
+    function fail(pos, msg, limit) { throw { pos: pos, msg: msg, limit: !!limit }; }
+    function push(type, a, b) { tt.push(type); ts.push(a); te.push(b); }
+
+    function complete() {
+      if (stack.length === 0) state = S_END;
+      else { cstack[cstack.length - 1]++; state = S_AFTER; }
+    }
+    function closeC() {
+      var j = stack.pop();
+      openL.push(j); closeL.push(tt.length - 1); cntL.push(cstack.pop());
+      complete();
+    }
+
+    // 把一个 token 喂给语法状态机；不合法就抛错
+    function feed(type, a, b, word) {
+      var isObj, open;
+      if (state === S_ARR_FIRST && type === T_RK) { push(type, a, b); closeC(); return; }
+
+      if (state === S_VALUE || state === S_ARR_FIRST || state === S_ARR_NEXT) {
+        if (type === T_LB || type === T_LK) {
+          push(type, a, b);
+          stack.push(tt.length - 1); cstack.push(0);
+          if (stack.length > maxDepth) maxDepth = stack.length;
+          if (stack.length > MAX_DEPTH) fail(a, "嵌套层级超过 " + MAX_DEPTH + " 层，已停止解析（预览受页面性能所限）", true);
+          state = type === T_LB ? S_OBJ_FIRST : S_ARR_FIRST;
+          return;
+        }
+        if (type >= T_STR && type <= T_NULL) { push(type, a, b); complete(); return; }
+        if (state === S_ARR_NEXT && type === T_RK) fail(a, "多余的逗号：数组的最后一项后面不能再写逗号");
+        fail(a, "此处应为一个值（对象、数组、字符串、数字、true、false 或 null），" + found(type, word));
+      }
+
+      if (state === S_OBJ_FIRST) {
+        if (type === T_STR) { push(type, a, b); state = S_COLON; return; }
+        if (type === T_RB) { push(type, a, b); closeC(); return; }
+        fail(a, "此处应为属性名（必须是双引号包裹的字符串）或「}」，" + found(type, word, true));
+      }
+
+      if (state === S_OBJ_KEY) {
+        if (type === T_STR) { push(type, a, b); state = S_COLON; return; }
+        if (type === T_RB) fail(a, "多余的逗号：对象的最后一个属性后面不能再写逗号");
+        fail(a, "此处应为属性名（必须是双引号包裹的字符串），" + found(type, word, true));
+      }
+
+      if (state === S_COLON) {
+        if (type === T_COLON) { push(type, a, b); state = S_VALUE; return; }
+        fail(a, "属性名后面缺少冒号「:」，" + found(type, word));
+      }
+
+      if (state === S_AFTER) {
+        open = stack[stack.length - 1];
+        isObj = tt[open] === T_LB;
+        if (type === T_COMMA) { push(type, a, b); state = isObj ? S_OBJ_KEY : S_ARR_NEXT; return; }
+        if (type === T_RB || type === T_RK) {
+          if ((type === T_RB) === isObj) { push(type, a, b); closeC(); return; }
+          fail(a, "括号不匹配：这里的" + TYPE_NAME[type] + "对不上前面的" + TYPE_NAME[tt[open]] + "，应为「" + (isObj ? "}" : "]") + "」");
+        }
+        fail(a, (isObj ? "对象" : "数组") + "的相邻两项之间缺少英文逗号「,」，" + found(type, word));
+      }
+
+      // S_END
+      fail(a, "JSON 在此处已经结束，后面不应再有内容（多个 JSON 请分开处理），" + found(type, word));
+    }
+
+    function scanString(i) {
+      var j = i + 1, c, d, k, lc;
+      for (;;) {
+        if (j >= n) {
+          lc = lineCol(s, i);
+          fail(n, "字符串没有闭合：缺少结尾的双引号（该字符串从第 " + lc.line + " 行第 " + lc.col + " 列开始）");
+        }
+        c = s.charCodeAt(j);
+        if (c === 34) return j + 1;
+        if (c === 92) {
+          d = s.charCodeAt(j + 1);
+          if (d === 117) {
+            for (k = 2; k < 6; k++) {
+              if (!isHex(s.charCodeAt(j + k))) fail(Math.min(j + k, n), "「\\u」转义后面必须跟 4 位十六进制数字");
+            }
+            j += 6;
+          } else if (d === 34 || d === 92 || d === 47 || d === 98 || d === 102 || d === 110 || d === 114 || d === 116) {
+            j += 2;
+          } else if (j + 1 >= n) {
+            j++;   // 反斜杠是最后一个字符：交给循环头报「没有闭合」
+          } else {
+            fail(j, "非法的转义序列「\\" + s.charAt(j + 1) + "」（反斜杠后只能接 \" \\ / b f n r t u）");
+          }
+          continue;
+        }
+        if (c < 32) fail(j, "字符串里出现了未转义的控制字符（如直接换行、制表符），换行请写成 \\n");
+        j++;
+      }
+    }
+
+    function scanNumber(i) {
+      var j = i, c;
+      if (s.charCodeAt(j) === 45) j++;
+      c = s.charCodeAt(j);
+      if (c === 48) {
+        j++;
+        if (isDigit(s.charCodeAt(j))) fail(j, "数字不能有多余的前导 0（如 01）");
+      } else if (c >= 49 && c <= 57) {
+        j++;
+        while (isDigit(s.charCodeAt(j))) j++;
+      } else {
+        fail(Math.min(j, n), "负号后面必须是数字");
+      }
+      if (s.charCodeAt(j) === 46) {
+        j++;
+        if (!isDigit(s.charCodeAt(j))) fail(Math.min(j, n), "小数点后面必须有数字");
+        while (isDigit(s.charCodeAt(j))) j++;
+      }
+      c = s.charCodeAt(j);
+      if (c === 101 || c === 69) {
+        j++;
+        c = s.charCodeAt(j);
+        if (c === 43 || c === 45) j++;
+        if (!isDigit(s.charCodeAt(j))) fail(Math.min(j, n), "指数「e」后面必须有数字");
+        while (isDigit(s.charCodeAt(j))) j++;
+      }
+      return j;
+    }
+
+    // 开头的 BOM 直接跳过（从别处复制文件内容时偶尔带着，肉眼不可见）
+    var i = (n > 0 && s.charCodeAt(0) === 0xFEFF) ? 1 : 0, c, j, w;
+
+    while (i < n) {
+      c = s.charCodeAt(i);
+      switch (c) {
+        case 32: case 10: case 13: case 9: i++; break;
+        case 123: feed(T_LB, i, i + 1, ""); i++; break;
+        case 125: feed(T_RB, i, i + 1, ""); i++; break;
+        case 91: feed(T_LK, i, i + 1, ""); i++; break;
+        case 93: feed(T_RK, i, i + 1, ""); i++; break;
+        case 58: feed(T_COLON, i, i + 1, ""); i++; break;
+        case 44: feed(T_COMMA, i, i + 1, ""); i++; break;
+        case 34:
+          // 先过语法检查再扫字符串内容：语法错误的位置在字符串起点，应当先报
+          feed(T_STR, i, i, "");
+          j = scanString(i);
+          te[te.length - 1] = j;
+          i = j;
+          break;
+        default:
+          if (c === 45 || isDigit(c)) {
+            feed(T_NUM, i, i, "");
+            j = scanNumber(i);
+            te[te.length - 1] = j;
+            i = j;
+          } else if (isWordStart(c)) {
+            j = i + 1;
+            while (j < n && isWordChar(s.charCodeAt(j))) j++;
+            w = s.slice(i, j);
+            if (w === "true") feed(T_TRUE, i, j, "");
+            else if (w === "false") feed(T_FALSE, i, j, "");
+            else if (w === "null") feed(T_NULL, i, j, "");
+            else feed(T_BAD, i, j, w);
+            i = j;
+          } else {
+            feed(T_BAD, i, i + 1, s.charAt(i));
+            i++;
+          }
+      }
+    }
+
+    if (state !== S_END) {
+      var need = "", closers = "", k;
+      if (state === S_COLON) need = "冒号「:」和值";
+      else if (state === S_VALUE || state === S_ARR_NEXT) need = "一个值";
+      else if (state === S_OBJ_KEY) need = "属性名";
+      for (k = stack.length - 1; k >= 0 && closers.length < 8; k--) closers += tt[stack[k]] === T_LB ? "}" : "]";
+      fail(n, "JSON 不完整：文本在这里就结束了" +
+        (need ? "，此处还需要" + need : "") +
+        (stack.length ? "；还有 " + stack.length + " 层括号没有闭合（需要补上「" + closers + (stack.length > 8 ? "…" : "") + "」）" : ""));
+    }
+
+    var nt = tt.length, match = new Int32Array(nt), cnt = new Int32Array(nt), q;
+    for (q = 0; q < nt; q++) match[q] = -1;
+    for (q = 0; q < openL.length; q++) { match[openL[q]] = closeL[q]; cnt[openL[q]] = cntL[q]; }
+
+    // 压缩结果：所有 token 原文直接拼接（字符串内部的空白保持不动）
+    var parts = new Array(nt);
+    for (q = 0; q < nt; q++) parts[q] = s.slice(ts[q], te[q]);
+
+    return { text: s, tt: tt, ts: ts, te: te, n: nt, match: match, cnt: cnt, maxDepth: maxDepth, mini: parts.join("") };
+  }
+
+  /* 向 JSON.parse 要错误位置。只认「 in JSON at position N」「(line L column C)」
+     和 Firefox 的「at line L column C of the JSON data」这几种带位置的格式，
+     并锚定在报错末尾——V8 的报错里会夹带一段用户原文，裸匹配 "position 3"
+     会被用户数据里的同样文字骗到。 */
+  function nativeLocate(text) {
+    var m, x;
+    try { JSON.parse(text); return null; }
+    catch (e) {
+      m = String(e && e.message || "");
+      x = / in JSON at position (\d+)(?: \(line (\d+) column (\d+)\))?$/.exec(m);
+      if (x) return { pos: +x[1] };
+      x = / at line (\d+) column (\d+) of the JSON data$/.exec(m);
+      if (x) return { pos: lineColToOffset(text, +x[1], +x[2]) };
+      return null;   // Safari、以及 V8 的 Unexpected token 'x', "…" is not valid JSON：没有位置
+    }
+  }
+
+  function analyze(text) {
+    try {
+      return { ok: true, res: scan(text) };
+    } catch (e) {
+      if (!e || typeof e.pos !== "number") {
+        return { ok: false, err: { noPos: true, msg: "解析时出现意外错误，请检查输入内容后重试" } };
+      }
+      var pos = e.pos, near = false, nv;
+      if (!e.limit) {
+        nv = nativeLocate(text);
+        if (nv && nv.pos !== pos) { pos = nv.pos; near = true; }
+      }
+      pos = Math.max(0, Math.min(pos, text.length));
+      var lc = lineCol(text, pos);
+      return { ok: false, err: { pos: pos, line: lc.line, col: lc.col, msg: e.msg, near: near } };
+    }
+  }
+
+  /* =========================================================
+     逐行输出：把 token 流还原成「一行一条」的格式化结果。
+     纯文本（复制 / 格式化按钮）和 HTML（预览）共用这一个迭代器，
+     保证两边的行完全一致，也让预览能按帧分片生成。
+     ========================================================= */
+  function newLine() { return { depth: 0, keyTok: -1, valTok: -1, kind: 0, comma: false }; }
+
+  function nextLine(res, st, L) {
+    var tt = res.tt, k = st.k, type;
+    if (k >= res.n) return false;
+    type = tt[k];
+    L.keyTok = -1; L.comma = false;
+    if (type === T_RB || type === T_RK) {
+      st.depth--;                         // 闭合括号与它的开括号同缩进
+      L.depth = st.depth; L.kind = K_CLOSE; L.valTok = k; k++;
+    } else {
+      L.depth = st.depth;
+      if (type === T_STR && tt[k + 1] === T_COLON) { L.keyTok = k; k += 2; type = tt[k]; }
+      L.valTok = k;
+      if (type === T_LB || type === T_LK) {
+        // 空对象/空数组写成一行 {} / []，不参与折叠
+        if (tt[k + 1] === (type === T_LB ? T_RB : T_RK)) { L.kind = K_EMPTY; k += 2; }
+        else { L.kind = K_OPEN; k++; st.depth++; }
+      } else {
+        L.kind = K_SCALAR; k++;
+      }
+    }
+    if (L.kind !== K_OPEN && tt[k] === T_COMMA) { L.comma = true; k++; }
+    st.k = k;
+    return true;
+  }
+
+  function rep(str, k) { return k > 0 ? new Array(k + 1).join(str) : ""; }
+
+  function countLines(res) {
+    var st = { k: 0, depth: 0 }, L = newLine(), c = 0;
+    while (nextLine(res, st, L)) c++;
+    return c;
+  }
+
+  function valText(res, L) {
+    var v = L.valTok, tt = res.tt;
+    if (L.kind === K_OPEN) return tt[v] === T_LB ? "{" : "[";
+    if (L.kind === K_EMPTY) return tt[v] === T_LB ? "{}" : "[]";
+    if (L.kind === K_CLOSE) return tt[v] === T_RB ? "}" : "]";
+    return res.text.slice(res.ts[v], res.te[v]);
+  }
+
+  function buildText(res, indentStr) {
+    var s = res.text, ts = res.ts, te = res.te;
+    var st = { k: 0, depth: 0 }, L = newLine(), out = [], pads = [], line;
+    while (nextLine(res, st, L)) {
+      line = pads[L.depth] || (pads[L.depth] = rep(indentStr, L.depth));
+      if (L.keyTok >= 0) line += s.slice(ts[L.keyTok], te[L.keyTok]) + ": ";
+      line += valText(res, L);
+      if (L.comma) line += ",";
+      out.push(line);
+    }
+    return out.join("\n");
+  }
+
+  var HAS_SPECIAL = /[&<>]/;
+  function esc(x) {
+    return HAS_SPECIAL.test(x)
+      ? x.replace(/[&<>]/g, function (ch) { return ch === "&" ? "&amp;" : ch === "<" ? "&lt;" : "&gt;"; })
+      : x;
+  }
+
+  var SCLS = { 7: "s", 8: "n", 9: "b", 10: "b", 11: "z" };
+
+  function rowHtml(res, L, n, pad) {
+    var s = res.text, ts = res.ts, te = res.te, tt = res.tt, v = L.valTok, h, isObj, m;
+    h = '<div class="ln' + (L.kind === K_OPEN ? " fd" : "") + '" data-n="' + n + '">';
+    if (L.kind === K_OPEN) h += '<i class="tg"></i>';
+    h += '<span class="cd">' + pad;
+    if (L.keyTok >= 0) h += '<span class="k">' + esc(s.slice(ts[L.keyTok], te[L.keyTok])) + "</span>: ";
+    if (L.kind === K_OPEN) {
+      isObj = tt[v] === T_LB;
+      m = res.match[v];
+      // 折叠时：开括号后面接「…}」（连同闭合括号后的逗号）和项数；展开时这两段是 display:none
+      h += (isObj ? "{" : "[") +
+        '<span class="ph">…' + (isObj ? "}" : "]") + (tt[m + 1] === T_COMMA ? "," : "") + "</span>" +
+        '<span class="cnt">' + res.cnt[v] + (isObj ? " 个键" : " 项") + "</span>";
+    } else if (L.kind === K_SCALAR) {
+      h += '<span class="' + SCLS[tt[v]] + '">' + esc(s.slice(ts[v], te[v])) + "</span>";
+    } else {
+      h += valText(res, L);
+    }
+    if (L.comma) h += ",";
+    return h + "</span></div>";
+  }
+
+  /* =========================================================
+     状态
+     ========================================================= */
+  var ta = $("src"), view = $("view"), box = $("lines"), emptyEl = $("empty");
+
+  var cur = null;        // 当前输入的扫描结果（输入合法时才有）
+  var good = null;       // 预览里正在展示的结果：{ res, key, indent, total, text }
+  var lastErr = null;
+  var rows = [];         // 预览的每一行 DOM
+  var foldEnd = [];      // 行号 → 对应闭合行；-2 = 不可折叠，-1 = 可折叠但闭合行未渲染
+  var lineDepth = [];
+  var renderId = 0, busy = false, timer = 0, suppress = false, copyTimer = 0;
+  var indentN = 2;
+  var foldDepth = Infinity;   // 「记住深度」：编辑重新渲染后按这个层级自动折叠
+
+  /* ---- 界面偏好（只存缩进与折叠层级，绝不存内容） ---- */
+  var PREF_KEY = "json-format:prefs";
+  function loadPrefs() {
+    try {
+      var o = JSON.parse(localStorage.getItem(PREF_KEY) || "{}");
+      if (o.indent === 4) indentN = 4;
+      if (/^[1-5]$/.test(String(o.depth))) foldDepth = +o.depth;
+    } catch (e) { /* 隐私模式 / file:// 下可能不可用，用默认值即可 */ }
+  }
+  function savePrefs() {
+    try {
+      localStorage.setItem(PREF_KEY, JSON.stringify({ indent: indentN, depth: foldDepth === Infinity ? "all" : foldDepth }));
+    } catch (e) { /* 同上 */ }
+  }
+  function syncPrefUI() {
+    $("ind2").classList.toggle("on", indentN === 2);
+    $("ind4").classList.toggle("on", indentN === 4);
+    $("depthSel").value = foldDepth === Infinity ? "all" : String(foldDepth);
+  }
+
+  /* =========================================================
+     折叠
+     ========================================================= */
+  function setFold(i, on) {
+    var end = foldEnd[i] >= 0 ? foldEnd[i] : rows.length - 1, j, r;
+    end = Math.min(end, rows.length - 1);
+    if (on) {
+      rows[i].classList.add("folded");
+      for (j = i + 1; j <= end; j++) rows[j].classList.add("h");
+    } else {
+      rows[i].classList.remove("folded");
+      for (j = i + 1; j <= end; ) {
+        r = rows[j];
+        r.classList.remove("h");
+        // 子级自己仍是折叠状态：它的内部行和闭合行要继续藏着，整段跳过
+        if (r.classList.contains("folded")) j = foldEnd[j] >= 0 ? foldEnd[j] + 1 : rows.length;
+        else j++;
+      }
+    }
+  }
+
+  function applyDepth(d, fresh) {
+    var i, n = rows.length, c;
+    if (!fresh) {
+      for (i = 0; i < n; i++) {
+        c = rows[i].classList;
+        if (c.contains("h") || c.contains("folded")) { c.remove("h"); c.remove("folded"); }
+      }
+    }
+    if (d === Infinity) return;
+    for (i = 0; i < n; ) {
+      if (foldEnd[i] >= 0 && lineDepth[i] >= d) { setFold(i, true); i = foldEnd[i] + 1; }
+      else i++;
+    }
+  }
+
+  box.addEventListener("click", function (e) {
+    var t = e.target, row, i;
+    if (!t || !t.classList) return;
+    if (!(t.classList.contains("tg") || t.classList.contains("ph") || t.classList.contains("cnt"))) return;
+    if (busy) { setStatus("预览还在渲染，稍候再折叠"); return; }
+    row = t.closest(".ln");
+    if (!row) return;
+    i = parseInt(row.getAttribute("data-n"), 10) - 1;
+    setFold(i, !row.classList.contains("folded"));
+  });
+
+  /* =========================================================
+     预览渲染（按帧分片）
+     ========================================================= */
+  function updateMeta(res, total) {
+    $("mLines").textContent = String(total);
+    $("mDepth").textContent = String(res.maxDepth);
+    $("mMini").textContent = humanSize(blobSize(res.mini));
+    $("metaRow").hidden = false;
+  }
+
+  function startRender(res, key) {
+    var id = ++renderId;
+    var indentStr = indentN === 4 ? "    " : "  ";
+    var pads = [];
+    var total = countLines(res);
+    var shown = Math.min(total, MAX_RENDER_LINES);
+    var prevTop = view.scrollTop, prevLeft = view.scrollLeft;
+
+    good = { res: res, key: key, indent: indentN, total: total, text: null };
+    rows = []; foldEnd = []; lineDepth = [];
+    box.innerHTML = "";
+    // 行号列宽按「位数」算（ch 单位），小文档不会白占一大块
+    box.style.setProperty("--d", String(String(shown).length));
+    emptyEl.hidden = true;
+    $("copyBtn").disabled = false;
+    if (total > shown) {
+      $("noteText").textContent = "结果共 " + total + " 行，预览只渲染前 " + shown + " 行；「复制」与「格式化」仍使用完整结果。";
+      $("noteBar").hidden = false;
+    } else {
+      $("noteBar").hidden = true;
+    }
+    updateMeta(res, total);
+
+    var st = { k: 0, depth: 0 }, L = newLine(), lineNo = 0, openStack = [];
+    busy = true;
+
+    function finish() {
+      busy = false;
+      applyDepth(foldDepth, true);
+      view.scrollTop = prevTop; view.scrollLeft = prevLeft;   // 编辑时别把阅读位置弹回顶部
+      setStatus("预览就绪 · " + shown + " 行" + (total > shown ? "（已截断）" : ""));
+    }
+
+    function step() {
+      if (id !== renderId) return;   // 被新一轮渲染取代了
+      var t0 = performance.now(), parts = [], c = 0, done = false, idx, o, q, kids;
+      for (;;) {
+        if (lineNo >= shown) { done = true; break; }
+        if (!nextLine(res, st, L)) { done = true; break; }
+        lineNo++;
+        idx = lineNo - 1;
+        lineDepth[idx] = L.depth;
+        if (L.kind === K_OPEN) { foldEnd[idx] = -1; openStack.push(idx); }
+        else {
+          foldEnd[idx] = -2;
+          if (L.kind === K_CLOSE) { o = openStack.pop(); if (o !== undefined) foldEnd[o] = idx; }
+        }
+        parts.push(rowHtml(res, L, lineNo, pads[L.depth] || (pads[L.depth] = rep(indentStr, L.depth))));
+        if ((++c & 63) === 0 && performance.now() - t0 > 12) break;   // 一帧最多干 ~12ms
+      }
+      box.insertAdjacentHTML("beforeend", parts.join(""));
+      kids = box.children;
+      for (q = rows.length; q < kids.length; q++) rows.push(kids[q]);
+      if (done) finish();
+      else {
+        setStatus("渲染预览中… " + Math.round(lineNo / shown * 100) + "%");
+        requestAnimationFrame(step);
+      }
+    }
+    step();   // 第一片同步做完：小文档一次到位，不会闪一下空白
+  }
+
+  /* =========================================================
+     校验结果 → 界面
+     ========================================================= */
+  function setLine(cls, text) {
+    var el = $("statusLine");
+    el.className = "hint-line" + (cls ? " " + cls : "");
+    el.textContent = text;
+    return el;
+  }
+
+  function errText(e) {
+    if (e.noPos) return "✗ " + e.msg;
+    return "✗ 第 " + e.line + " 行，第 " + e.col + " 列" + (e.near ? "附近" : "") + "：" + e.msg;
+  }
+
+  function ctxEl(text, pos) {
+    var ls = pos > 0 ? text.lastIndexOf("\n", pos - 1) + 1 : 0;
+    var le = text.indexOf("\n", pos);
+    if (le < 0) le = text.length;
+    var start = Math.max(ls, pos - 28), end = Math.min(le, pos + 28);
+    var ch = pos < le ? text.charAt(pos) : "";
+    var div = document.createElement("div"), mk = document.createElement("mark");
+    div.className = "ctx";
+    mk.textContent = ch === "" ? "⏎" : ch === " " ? "␣" : ch === "\t" ? "→" : ch;
+    div.appendChild(document.createTextNode((start > ls ? "…" : "") + text.slice(start, pos)));
+    div.appendChild(mk);
+    div.appendChild(document.createTextNode(text.slice(pos + 1, end) + (end < le ? "…" : "")));
+    return div;
+  }
+
+  function hideError() {
+    lastErr = null;
+    $("errBar").hidden = true;
+    ta.classList.remove("bad");
+  }
+
+  function showError(err, text) {
+    var msg = errText(err), el;
+    lastErr = err;
+    el = setLine("warn", msg);
+    if (!err.noPos) el.appendChild(ctxEl(text, err.pos));
+    $("errText").textContent = msg + (good ? "　（下方预览保留的是最近一次合法的结果）" : "");
+    $("errBar").hidden = false;
+    $("jumpBtn").hidden = !!err.noPos;
+    ta.classList.add("bad");
+    $("copyBtn").disabled = !good;
+    setStatus(err.noPos ? "输入有误" : "JSON 有误：第 " + err.line + " 行，第 " + err.col + " 列", true);
+  }
+
+  function describeRoot(res) {
+    var t = res.tt[0];
+    if (t === T_LB) return "对象，" + res.cnt[0] + " 个键";
+    if (t === T_LK) return "数组，" + res.cnt[0] + " 项";
+    if (t === T_STR) return "字符串";
+    if (t === T_NUM) return "数字";
+    if (t === T_NULL) return "null";
+    return "布尔值";
+  }
+
+  function keyOf(res) { return indentN + "|" + res.mini; }
+
+  function onEmpty(fromBtn) {
+    cur = null; good = null;
+    hideError();
+    renderId++; busy = false;   // 作废进行中的渲染
+    rows = []; foldEnd = []; lineDepth = [];
+    box.innerHTML = "";
+    emptyEl.hidden = false;
+    $("noteBar").hidden = true;
+    $("metaRow").hidden = true;
+    $("copyBtn").disabled = true;
+    setLine(fromBtn ? "warn" : "", fromBtn ? "输入为空：请先在上方粘贴或输入 JSON 文本。" : "输入为空：粘贴或输入 JSON 后会自动校验。");
+    setStatus("等待输入 JSON…");
+    if (fromBtn) ta.focus();
+  }
+
+  function onValid(res, text) {
+    var key = keyOf(res);
+    cur = res;
+    hideError();
+    setLine("ok", "✓ 合法 JSON：" + describeRoot(res) + " · 输入 " + humanSize(blobSize(text)));
+    // 只有格式化结果真的变了才重绘：仅改了空白/换行时保留用户手动折叠的状态
+    if (!good || good.key !== key) startRender(res, key);
+    else { $("copyBtn").disabled = false; if (!busy) setStatus("JSON 合法"); }
+  }
+
+  function onInvalid(err, text) {
+    cur = null;
+    showError(err, text);
+  }
+
+  function run(fromBtn) {
+    clearTimeout(timer);
+    var text = ta.value, r;
+    $("clearBtn").disabled = !text;
+    if (!/\S/.test(text)) { onEmpty(!!fromBtn); return; }
+    if (text.length > MAX_CHARS) {
+      onInvalid({ noPos: true, msg: "输入超过 10 MB，本页不处理，请改用命令行工具（如 jq）" }, text);
+      return;
+    }
+    r = analyze(text);
+    if (r.ok) onValid(r.res, text);
+    else onInvalid(r.err, text);
+  }
+
+  /* =========================================================
+     输入框操作
+     ========================================================= */
+  /* 改写输入框内容。优先走 execCommand("insertText")，这样 ⌘Z 能撤销；
+     内容很大时这条路径很慢，直接赋值（失去撤销）。 */
+  function setInput(text) {
+    var ok = false;
+    suppress = true;
+    if (text.length <= 150000) {
+      ta.focus(); ta.select();
+      try { ok = document.execCommand("insertText", false, text); } catch (e) { ok = false; }
+    }
+    if (!ok) ta.value = text;
+    suppress = false;
+    // 插入后光标在末尾，textarea 会滚到最底；回到开头更符合预期
+    ta.scrollTop = 0; ta.scrollLeft = 0;
+    try { ta.setSelectionRange(0, 0); } catch (e2) { /* 个别浏览器不支持就算了 */ }
+    $("clearBtn").disabled = !ta.value;
+  }
+
+  var charW = 0;
+  function measureCharWidth() {
+    if (charW) return charW;
+    var cs = getComputedStyle(ta), c = document.createElement("canvas").getContext("2d");
+    c.font = cs.fontSize + " " + cs.fontFamily;
+    charW = c.measureText("0000000000").width / 10 || 7.2;
+    return charW;
+  }
+
+  function jumpToError() {
+    if (!lastErr || lastErr.noPos) return;
+    var p = Math.min(lastErr.pos, ta.value.length);
+    ta.focus();
+    try { ta.setSelectionRange(p, Math.min(p + 1, ta.value.length)); } catch (e) { /* 忽略 */ }
+    // 手动居中：行高固定 18px 且不换行，行列号可以直接换算成滚动位置
+    ta.scrollTop = Math.max(0, (lastErr.line - 1) * 18 - ta.clientHeight / 2 + 18);
+    ta.scrollLeft = Math.max(0, (lastErr.col - 1) * measureCharWidth() - ta.clientWidth / 2);
+  }
+
+  ta.addEventListener("input", function () {
+    if (suppress) return;
+    $("clearBtn").disabled = !ta.value;
+    clearTimeout(timer);
+    // 大文档解析与渲染都更贵，多等一会儿再动手，边打字边卡就太难受了
+    timer = setTimeout(run, ta.value.length > 200000 ? 500 : 180);
+  });
+
+  $("fmtBtn").addEventListener("click", function () {
+    run(true);
+    if (!cur) { jumpToError(); return; }
+    setInput(buildText(cur, indentN === 4 ? "    " : "  "));
+    setLine("ok", "✓ 已格式化（" + indentN + " 空格缩进）· " + describeRoot(cur));
+  });
+
+  $("minBtn").addEventListener("click", function () {
+    run(true);
+    if (!cur) { jumpToError(); return; }
+    setInput(cur.mini);
+    setLine("ok", "✓ 已压缩 · " + humanSize(blobSize(cur.mini)));
+  });
+
+  $("sampleBtn").addEventListener("click", function () {
+    // 故意写成一行：点「格式化」能直接看到效果；末尾的大数用来展示不丢精度
+    setInput('{"名称":"JSON 格式化示例","版本":1.5,"启用":true,"备注":null,' +
+      '"标签":["工具","前端","纯本地"],' +
+      '"作者":{"姓名":"张三","技能":[{"名称":"JavaScript","等级":5},{"名称":"CSS","等级":4}]},' +
+      '"空对象":{},"空数组":[],' +
+      '"转义":"换行\\n 引号\\" 中文\\u4e2d","大数":12345678901234567890}');
+    run();
+  });
+
+  $("clearBtn").addEventListener("click", function () {
+    var ok = false;
+    ta.focus(); ta.select();
+    // 走 execCommand("delete")，清空后 ⌘Z 还能找回
+    try { ok = document.execCommand("delete"); } catch (e) { ok = false; }
+    if (!ok) ta.value = "";
+    run();
+  });
+
+  $("jumpBtn").addEventListener("click", jumpToError);
+
+  function setIndent(n) {
+    if (indentN === n) return;
+    indentN = n;
+    savePrefs(); syncPrefUI();
+    if (good) startRender(good.res, keyOf(good.res));
+  }
+  $("ind2").addEventListener("click", function () { setIndent(2); });
+  $("ind4").addEventListener("click", function () { setIndent(4); });
+
+  $("depthSel").addEventListener("change", function () {
+    foldDepth = this.value === "all" ? Infinity : parseInt(this.value, 10);
+    savePrefs();
+    if (!busy && good) applyDepth(foldDepth, false);   // 渲染中的话 finish() 会按新值处理
+  });
+
+  /* =========================================================
+     复制
+     ========================================================= */
+  function legacyCopy(t) {
+    var el = document.createElement("textarea"), ok = false;
+    el.value = t;
+    el.setAttribute("readonly", "");
+    el.style.cssText = "position:fixed;top:0;left:-9999px;opacity:0";
+    document.body.appendChild(el);
+    el.select();
+    try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+    document.body.removeChild(el);
+    return ok;
+  }
+
+  // 剪贴板 API 要求安全上下文；file:// 或权限被拒时退回 execCommand
+  function copyText(t) {
+    if (navigator.clipboard && navigator.clipboard.writeText && window.isSecureContext) {
+      return navigator.clipboard.writeText(t).then(function () { return true; }, function () { return legacyCopy(t); });
+    }
+    return Promise.resolve(legacyCopy(t));
+  }
+
+  $("copyBtn").addEventListener("click", function () {
+    if (!good) return;
+    var btn = this, g = good;
+    if (g.text === null) g.text = buildText(g.res, g.indent === 4 ? "    " : "  ");
+    copyText(g.text).then(function (ok) {
+      clearTimeout(copyTimer);
+      btn.textContent = ok ? "已复制 ✓" : "复制失败";
+      if (ok) setStatus(lastErr ? "已复制（注意：当前输入有误，复制的是最近一次合法的结果）" : "已复制格式化结果（" + humanSize(blobSize(g.text)) + "）", !!lastErr);
+      else setStatus("浏览器拒绝写入剪贴板，请在预览里手动选中后复制", true);
+      copyTimer = setTimeout(function () { btn.textContent = "复制"; }, 1600);
+    });
+  });
+
+  /* =========================================================
+     拖入文件
+     整页必须拦住 dragover / drop 的默认行为，否则文件落在页面上时
+     浏览器会直接导航到那个文件，当前输入全丢。
+     ========================================================= */
+  function hasFiles(e) {
+    var t = e.dataTransfer && e.dataTransfer.types, i;
+    if (!t) return false;
+    for (i = 0; i < t.length; i++) if (t[i] === "Files") return true;
+    return false;
+  }
+
+  function loadFile(f) {
+    if (f.size > MAX_CHARS) {
+      onInvalid({ noPos: true, msg: "文件超过 10 MB，本页不处理，请改用命令行工具（如 jq）" }, "");
+      return;
+    }
+    var fr = new FileReader();
+    fr.onload = function () { setInput(String(fr.result)); run(); };
+    fr.onerror = function () { setStatus("读取文件失败", true); };
+    fr.readAsText(f);
+  }
+
+  ["dragenter", "dragover"].forEach(function (ev) {
+    document.addEventListener(ev, function (e) {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      ta.classList.add("dragover");
+    });
+  });
+  document.addEventListener("dragleave", function (e) {
+    if (!e.relatedTarget) ta.classList.remove("dragover");   // relatedTarget 为空 = 拖出了窗口
+  });
+  document.addEventListener("drop", function (e) {
+    ta.classList.remove("dragover");
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    var f = e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f) loadFile(f);
+  });
+  window.addEventListener("blur", function () { ta.classList.remove("dragover"); });
+
+  /* =========================================================
+     启动
+     ========================================================= */
+  loadPrefs();
+  syncPrefUI();
+  onEmpty(false);
+})();
+</script>
+</body>
+</html>
