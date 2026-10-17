@@ -43,6 +43,15 @@
     }
     header h1 { font-size: 16px; margin: 0; font-weight: 600; letter-spacing: .3px; }
     header .hint { font-size: 12px; color: var(--muted); }
+    header .spacer { flex: 1 1 auto; }
+    /* 打开文件按钮：照 markdown.html 的样式与交互（含拖拽时闪亮引导） */
+    header .open {
+      font: inherit; font-size: 12px; color: var(--text);
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: 7px; padding: 5px 12px; cursor: pointer;
+      transition: background .15s, border-color .15s, color .15s;
+    }
+    header .open:hover, header .open.flash { border-color: var(--accent); color: var(--accent); }
 
     .layout {
       flex: 1 1 auto;
@@ -229,6 +238,25 @@
     }
     footer .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); flex: 0 0 auto; }
 
+    /* 全屏 loading 遮罩：只有确认会等待的大文件一路出现，小文件不闪 */
+    .busy {
+      position: fixed; inset: 0; z-index: 10;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(14, 17, 22, .68);
+    }
+    .busy-card {
+      display: flex; align-items: center; gap: 12px;
+      padding: 14px 22px; font-size: 13px; color: var(--text);
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: var(--radius); box-shadow: 0 6px 24px rgba(0, 0, 0, .45);
+    }
+    .spin {
+      width: 16px; height: 16px; flex: 0 0 auto;
+      border: 2px solid var(--border); border-top-color: var(--accent);
+      border-radius: 50%; animation: spin .8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(1turn); } }
+
     ::-webkit-scrollbar { width: 9px; height: 9px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: #2c3542; border-radius: 5px; }
@@ -258,7 +286,10 @@
 
   <header>
     <h1>🧾 JSON 格式化 / 校验</h1>
-    <span class="hint">实时校验 · 错误定位到行列 · 语法高亮 · 可折叠 · 纯前端处理，JSON 不上传 · 可拖入 .json 文件</span>
+    <span class="hint">实时校验 · 错误定位到行列 · 语法高亮 · 可折叠 · 纯前端处理，JSON 不上传 · 可打开 / 拖入 .json 文件</span>
+    <span class="spacer"></span>
+    <button type="button" class="open" id="openBtn" title="打开本地 .json 文件">📂 打开文件</button>
+    <input type="file" id="filePick" accept=".json,application/json" hidden>
   </header>
 
   <div class="layout">
@@ -339,6 +370,10 @@
         <div class="lines" id="lines"></div>
       </div>
     </section>
+  </div>
+
+  <div class="busy" id="busy" hidden>
+    <div class="busy-card"><span class="spin"></span><span id="busyText">读取文件…</span></div>
   </div>
 
   <footer>
@@ -1197,9 +1232,15 @@
       onInvalid({ noPos: true, msg: "文件超过 10 MB，本页不处理，请改用命令行工具（如 jq）" }, "");
       return;
     }
+    var big = f.size >= BUSY_AT;
+    if (big) showBusy("读取 " + f.name + "·" + humanSize(f.size) + "…");
     var fr = new FileReader();
-    fr.onload = function () { setInput(String(fr.result)); run(); };
-    fr.onerror = function () { setStatus("读取文件失败", true); };
+    fr.onload = function () {
+      setInput(String(fr.result));
+      run();          // 包含同步扫描与首批渲染，遮罩盖住这段
+      hideBusy();     // 之后交给 footer 的「渲染预览中… x%」接力
+    };
+    fr.onerror = function () { hideBusy(); setStatus("读取文件失败", true); };
     fr.readAsText(f);
   }
 
@@ -1208,19 +1249,34 @@
       if (!hasFiles(e)) return;
       e.preventDefault();
       ta.classList.add("dragover");
+      $("openBtn").classList.add("flash");   // 拖文件路过时顺手指一下「也可以点这里」
     });
   });
   document.addEventListener("dragleave", function (e) {
-    if (!e.relatedTarget) ta.classList.remove("dragover");   // relatedTarget 为空 = 拖出了窗口
+    if (!e.relatedTarget) { ta.classList.remove("dragover"); $("openBtn").classList.remove("flash"); }
   });
   document.addEventListener("drop", function (e) {
     ta.classList.remove("dragover");
+    $("openBtn").classList.remove("flash");
     if (!hasFiles(e)) return;
     e.preventDefault();
     var f = e.dataTransfer.files && e.dataTransfer.files[0];
     if (f) loadFile(f);
   });
-  window.addEventListener("blur", function () { ta.classList.remove("dragover"); });
+  window.addEventListener("blur", function () { ta.classList.remove("dragover"); $("openBtn").classList.remove("flash"); });
+
+  /* ---------- 打开文件按钮：与拖入走同一个 loadFile ---------- */
+  $("openBtn").addEventListener("click", function () { $("filePick").click(); });
+  $("filePick").addEventListener("change", function () {
+    loadFile(this.files[0]);
+    this.value = "";   /* 清掉选择，下次还能再选同一个文件 */
+    this.blur();
+  });
+
+  /* ---------- 大文件的全屏 loading：阈值之上才亮，避免小文件闪一下 ---------- */
+  var BUSY_AT = 512 * 1024;
+  function showBusy(t) { $("busyText").textContent = t; $("busy").hidden = false; }
+  function hideBusy() { $("busy").hidden = true; }
 
   /* =========================================================
      启动

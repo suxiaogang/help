@@ -132,7 +132,39 @@ favicon 用内联 data:（深绿圆角方块 + 绿色 `>_`），每页相同，�
   preventDefault**，否则浏览器会导航离开当前页。
 - **footer 状态栏**：`.dot`（accent 圆点）+ `#statusText`（muted 12px），所有异步
   过程的状态都落到这里 + 卡片内 `.hint-line`；出错用 `--warn` 色。
-- **loading**：CSS 小转圈（border 圆圈旋转，「转换中…」一类文案前放 `<span class="spin">`）。
+- **loading 两级制（选读：仅重型操作）**：估时一秒以内的等待，用按钮状态文案 +
+  行内小转圈（`.spin`：border 圆圈旋转，`<span class="spin">` 放在「转换中…」前）；
+  全屏遮罩只在「确实要停顿半秒以上」的重操作出现，典型如「读入大文件 → 同步解析」整段。
+  三条铁律：①**阈值门**——按输入体量判断（约 512KB 以上才动用），轻操作严禁上遮罩，
+  闪一下比不动更伤体验；②遮罩在发起重读取**之前**显出（异步 IO 才来得及画出来），
+  盖住同步解析与首批渲染，完成即熄，**失败路径也要保证熄灭**；③遮罩熄灭后若有
+  长尾渲染，交给 footer 状态栏的进度文案接力，遮罩不常驻、不吞进度。
+
+```html
+<!-- 完全自包含：没见过样例也能照此复现；提供了样例则以样例为准 -->
+<div class="busy" id="busy" hidden>
+  <div class="busy-card"><span class="spin"></span><span id="busyText">读取…</span></div>
+</div>
+<style>
+  .busy { position: fixed; inset: 0; z-index: 10; display: flex;
+          align-items: center; justify-content: center;
+          background: rgba(14, 17, 22, .68); }
+  .busy-card { display: flex; align-items: center; gap: 12px;
+               padding: 14px 22px; font-size: 13px;
+               background: var(--panel); border: 1px solid var(--border);
+               border-radius: var(--radius); box-shadow: 0 6px 24px rgba(0, 0, 0, .45); }
+  .spin { width: 16px; height: 16px; flex: 0 0 auto;
+          border: 2px solid var(--border); border-top-color: var(--accent);
+          border-radius: 50%; animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(1turn); } }
+</style>
+<script>
+  function showBusy(t) { busyText.textContent = t; busy.hidden = false; }
+  function hideBusy() { busy.hidden = true; }
+  /* 参考实现：json-format.html 的 loadFile —— showBusy 在 readAsText 之前调用，
+     run()（同步解析 + 首批渲染）结束后 hideBusy；onerror 里同样 hideBusy。 */
+</script>
+```
 - **试听/下载混用 blob URL 时**，试听与下载用两条 URL：试听带真实 MIME（音频 `<audio>` 才认），
   下载在桌面端用 `blob.slice(0, size, "application/octet-stream")` 剥 MIME 保住
   `download` 属性的扩展名；移动端（UA 含 Mobi/Android/iPhone/iPad/iPod）浏览器保存时
