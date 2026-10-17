@@ -148,12 +148,20 @@
 var GROUPS = [
 	{ id: "image", name: "图片处理", icon: "🖼️" },
 	{ id: "video", name: "视频", icon: "🎬" },
+	{ id: "audio", name: "音频", icon: "🔊" },
 	{ id: "text", name: "文字与字符画", icon: "🔤" },
 	{ id: "dev", name: "开发工具", icon: "🛠️" },
 	{ id: "doc", name: "速查手册", icon: "📚" },
 ];
 
 var TOOLS = [
+	{
+		g: "audio",
+		name: "音频转换",
+		desc: "MP3 / AAC / WAV 等转 CAF 或 iPhone 铃声 M4R，浏览器内解码与封装，纯本地",
+		href: "audio-convert.html",
+		icon: "🔊"
+	},
 	{
 		g: "text",
 		name: "Markdown 编辑器",

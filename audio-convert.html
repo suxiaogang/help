@@ -1,0 +1,780 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>音频转换</title>
+  <meta name="description" content="把 MP3 / AAC / WAV / M4A / FLAC 等浏览器可解码的音频转成 CAF（Core Audio Format）或 iPhone 铃声 M4R，纯前端处理、解码与封装全在本机浏览器内完成，不经过服务器" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23171c24'/%3E%3Ctext x='16' y='23' font-size='18' font-weight='bold' font-family='ui-monospace,Menlo,monospace' fill='%233dd68c' text-anchor='middle'%3E%3E_%3C/text%3E%3C/svg%3E" />
+  <style>
+    /* 与各工具子页面共用同一套色板，改这里即可整体换肤 */
+    :root {
+      --bg: #0e1116;
+      --panel: #171c24;
+      --panel-2: #1e2632;
+      --border: #2a3340;
+      --text: #e8edf4;
+      --muted: #8b97a8;
+      --accent: #3dd68c;
+      --accent-2: #2bb673;
+      --warn: #ffb340;
+      --radius: 10px;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+              "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; }
+
+    body {
+      background: var(--bg); color: var(--text);
+      font-family: var(--sans); font-size: 13px;
+      display: flex; flex-direction: column;
+      min-height: 100vh;
+    }
+
+    header {
+      flex: 0 0 auto; padding: 11px 22px;
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    }
+    header h1 { font-size: 16px; margin: 0; font-weight: 600; letter-spacing: .3px; }
+    header .hint { font-size: 12px; color: var(--muted); }
+
+    /* ---------- 主栏：窄列居中，工具交互少不需要双栏 ---------- */
+    .wrap {
+      flex: 1 1 auto;
+      width: min(720px, 100%);
+      margin: 0 auto;
+      padding: 18px 16px 30px;
+    }
+    .wrap > p.sub {
+      margin: 0 0 14px; color: var(--muted); font-size: 12.5px; line-height: 1.7;
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+    }
+    .card + .card { margin-top: 12px; }
+    .card-title {
+      display: flex; align-items: center; justify-content: space-between;
+      font-size: 11px; font-weight: 600; color: var(--muted);
+      letter-spacing: .5px; margin-bottom: 10px;
+    }
+
+    button {
+      font: inherit; font-size: 12px; padding: 6px 12px;
+      border-radius: 7px; border: 1px solid var(--border);
+      background: var(--panel-2); color: var(--text);
+      cursor: pointer; white-space: nowrap;
+      transition: background .15s, border-color .15s, opacity .15s;
+    }
+    button:hover:not(:disabled) { background: #232c39; border-color: #3a4557; }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+    button.primary { background: var(--accent); border-color: var(--accent); color: #062315; font-weight: 600; }
+    button.primary:hover:not(:disabled) { background: var(--accent-2); border-color: var(--accent-2); }
+
+    /* ---------- 拖放区 ---------- */
+    .drop {
+      margin-bottom: 14px;
+      border: 2px dashed var(--border); border-radius: var(--radius);
+      padding: 18px 16px; text-align: center; cursor: pointer;
+      transition: border-color .2s, background-color .2s;
+    }
+    .drop:hover, .drop.dragover { border-color: var(--accent); background: rgba(61, 214, 140, .06); }
+    .drop .inner { display: flex; align-items: center; gap: 12px; text-align: left; }
+    .drop .icon { font-size: 22px; line-height: 1; flex: 0 0 auto; }
+    .drop .text { color: var(--muted); font-size: 11.5px; line-height: 1.5; }
+    .drop .text b { color: var(--text); }
+    .drop input[type="file"] { display: none; }
+
+    /* ---------- 信息栅格 ---------- */
+    .info-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+      gap: 10px;
+    }
+    .info-item {
+      background: #10151c; border: 1px solid var(--border);
+      border-radius: 10px; padding: 10px 12px; min-width: 0;
+    }
+    .info-item .label {
+      font-size: 10.5px; color: var(--muted);
+      text-transform: uppercase; letter-spacing: .5px; margin-bottom: 4px;
+    }
+    .info-item .value {
+      font-family: var(--mono); font-size: 12.5px; color: var(--text);
+      font-weight: 600; word-break: break-all;
+    }
+    .info-item .value.empty { color: var(--muted); font-weight: 400; }
+
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+    .hint-line { margin-top: 10px; font-size: 12px; color: var(--muted); line-height: 1.6; }
+    .hint-line .err { color: var(--warn); }
+
+    /* 转换中的小转圈 */
+    .spin {
+      display: inline-block; width: 10px; height: 10px;
+      border: 2px solid var(--border); border-top-color: var(--accent);
+      border-radius: 50%; animation: spin .7s linear infinite;
+      vertical-align: -1px; margin-right: 5px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* 输出格式两选一 */
+    .seg { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .seg button { padding: 7px 8px; font-size: 12px; }
+    .seg button.active { background: var(--accent); border-color: var(--accent); color: #062315; font-weight: 600; }
+    .seg button.active:hover { background: var(--accent-2); border-color: var(--accent-2); }
+
+    audio {
+      width: 100%; margin-top: 10px;
+      border-radius: 8px;
+    }
+
+    /* 允许整页拖放接收音频文件 */
+    body.dragover::after {
+      content: "松开即可载入音频"; position: fixed; inset: 0; z-index: 9;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(14, 17, 22, .82); color: var(--accent);
+      font-size: 15px; letter-spacing: 1px; pointer-events: none;
+      border: 2px dashed var(--accent); border-radius: 0;
+    }
+
+    footer {
+      flex: 0 0 auto; padding: 9px 20px;
+      border-top: 1px solid var(--border);
+      font-size: 12px; color: var(--muted);
+      display: flex; align-items: center; gap: 8px;
+    }
+    footer .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); flex: 0 0 auto; }
+
+    ::-webkit-scrollbar { width: 9px; height: 9px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #2c3542; border-radius: 5px; }
+    ::-webkit-scrollbar-thumb:hover { background: #3a4557; }
+
+    @media (max-width: 560px) {
+      .wrap { padding: 14px 10px 24px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>🔊 音频转换</h1>
+    <span class="hint">CAF / iPhone 铃声 · 解码与封装全在浏览器内完成，文件不离开本机</span>
+  </header>
+
+  <div class="wrap">
+    <p class="sub">
+      选一个音频文件（MP3 / AAC / WAV / M4A / FLAC 等浏览器能解码的格式均可），
+      输出 <a style="color:var(--text)" title="Core Audio Format">CAF</a> 或
+      iPhone 铃声 <code style="font-family:var(--mono)">.m4r</code>（AAC @ MP4），
+      选好后自动开始转换。
+    </p>
+
+    <!-- 选择文件 -->
+    <div class="drop" id="drop" role="button" tabindex="0" aria-label="选择音频文件">
+      <div class="inner">
+        <div class="icon">📂</div>
+        <div class="text">
+          <b>点击选择文件，或把音频直接拖到页面任意位置</b><br>
+          建议 10 秒以内的短音频；输出为未压缩 PCM，越长的音频文件越大
+        </div>
+      </div>
+      <input type="file" id="filePick" accept="audio/*,.mp3,.mpga,.mp2,.aac,.m4a,.wav,.flac,.ogg,.webm">
+    </div>
+
+    <!-- 文件信息 -->
+    <div class="card">
+      <div class="card-title"><span>文件信息</span><button type="button" class="mini" id="resetBtn" style="display:none">换一个文件</button></div>
+      <div class="info-grid">
+        <div class="info-item" style="grid-column: 1 / -1">
+          <div class="label">文件</div>
+          <div class="value empty" id="iName">尚未选择</div>
+        </div>
+        <div class="info-item">
+          <div class="label">大小</div>
+          <div class="value empty" id="iSize">—</div>
+        </div>
+        <div class="info-item">
+          <div class="label">时长</div>
+          <div class="value empty" id="iDur">—</div>
+        </div>
+        <div class="info-item">
+          <div class="label">采样率</div>
+          <div class="value empty" id="iRate">—</div>
+        </div>
+        <div class="info-item">
+          <div class="label">声道</div>
+          <div class="value empty" id="iChan">—</div>
+        </div>
+      </div>
+      <div id="srcListenWrap" hidden>
+        <div class="card-title" style="margin:12px 0 4px"><span>试听源文件</span></div>
+        <audio id="srcListen" controls preload="auto"></audio>
+        <div class="hint-line" id="srcNote" hidden style="margin-top:6px">
+          本段音频时长不满 1 秒：原生播放控件按秒取整，进度条会显示「0:00 / 0:00」，
+          这是取整显示，音频本身没有问题；下方「时长」里是精确值。
+        </div>
+      </div>
+    </div>
+
+    <!-- 输出格式 -->
+    <div class="card">
+      <div class="card-title"><span>输出格式</span></div>
+      <div class="seg">
+        <button type="button" id="fmtCaf" class="active">CAF（本机 / QuickTime 家）</button>
+        <button type="button" id="fmtM4r">M4R（iPhone 铃声）</button>
+      </div>
+      <div class="hint-line" id="fmtNote">
+        16-bit PCM，无压缩，体积大（约 176 KB/秒/声道）；采样率保持源文件。选好文件自动转换。
+      </div>
+    </div>
+
+    <!-- 转换与导出 -->
+    <div class="card">
+      <div class="card-title"><span>转换与导出</span></div>
+      <div class="actions">
+        <button type="button" id="dlBtn" disabled>等待音频…</button>
+        <span style="font-size:11.5px;color:var(--muted)">选好文件即自动开始转换</span>
+      </div>
+      <div class="hint-line" id="statusLine">等待选择音频……</div>
+      <div id="outListenWrap" hidden>
+        <div class="card-title" style="margin:12px 0 4px"><span>试听输出（浏览器认识这种容器时才显示）</span></div>
+        <audio id="outListen" controls preload="auto"></audio>
+      </div>
+    </div>
+
+    <p class="sub" style="margin-top:14px">
+      输出说明 ① CAF：<code style="font-family:var(--mono)">caff</code> +
+      <code style="font-family:var(--mono)">lpcm</code>（16-bit 小端，flags 0x2），
+      与 <code style="font-family:var(--mono)">afconvert -f caff -d LEI16</code> 同构。
+      ② M4R：就是 AAC 装进 MP4 容器再改后缀，浏览器走
+      <code style="font-family:var(--mono)">MediaRecorder(audio/mp4;codecs=mp4a.40.2)</code>
+      实时编码，铃声上限 40 秒。
+      所有 CAF 结构字段按 Apple 规范一律大端，仅样本负载用小端。
+      转换可能有约几十毫秒的编码器开头空白被浏览器裁掉（时长略短），属正常。
+    </p>
+  </div>
+
+  <footer>
+    <span class="dot"></span><span id="statusText">等待选择音频…</span>
+  </footer>
+
+<script>
+(function () {
+  "use strict";
+
+  var $ = function (id) { return document.getElementById(id); };
+
+  var filePick = $("filePick"), drop = $("drop");
+  var dlBtn = $("dlBtn"), resetBtn = $("resetBtn");
+  var statusLine = $("statusLine"), statusText = $("statusText");
+  var srcListen = $("srcListen"), srcListenWrap = $("srcListenWrap");
+  var outListen = $("outListen"), outListenWrap = $("outListenWrap");
+  var srcNote = $("srcNote");
+
+  var curFile = null, decodedBuf = null, cafBlob = null, cafURL = null, dlURL = null, srcURL = null;
+  var target = "caf";   // caf | m4r
+
+  /* setStatus(文案, 是否错误, 是否已是 HTML)；正文区允许塞转圈等标记 */
+  function setStatus(text, isErr, isHTML) {
+    statusText.textContent = text.replace(/<[^>]*>/g, "").trim();
+    if (isErr) {
+      statusLine.innerHTML = '<span class="err">' + esc(text) + "</span>";
+    } else if (isHTML) {
+      statusLine.innerHTML = text;
+    } else {
+      statusLine.textContent = text;
+    }
+  }
+  function esc(s) {
+    return String(s).replace(/[&<>"]/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+    });
+  }
+  function fmtBytes(n) {
+    if (n < 1024) return n + " B";
+    if (n < 1048576) return (n / 1024).toFixed(1) + " KB";
+    return (n / 1048576).toFixed(2) + " MB";
+  }
+  function fmtDur(s) {
+    return s >= 1 ? s.toFixed(2) + " 秒" : Math.round(s * 1000) + " 毫秒";
+  }
+  function setInfo(id, text) {
+    var el = $(id);
+    el.textContent = text;
+    el.classList.toggle("empty", !text);
+  }
+
+  /* =======================================================
+     各容器的原生采样率解析。
+     decodeAudioData 会重采样到 AudioContext 的采样率，
+     所以先用各自容器的头部字段把源采样率读出来，再按它建
+     上下文，输出 CAF 才能保持 44100 等原生值。
+     都解析不出时返回 0 → 用默认采样率。
+     ======================================================= */
+  var RATE_TABLE = {
+    3: [44100, 48000, 32000],   // MPEG1
+    2: [22050, 24000, 16000],   // MPEG2 (LSF)
+    0: [11025, 12000, 8000]     // MPEG2.5
+  };
+  function mp3Rate(u8) {
+    var off = 0;
+    /* 跳过 ID3v2（'ID3' + syncsafe size + 可选 footer） */
+    if (u8[0] === 0x49 && u8[1] === 0x44 && u8[2] === 0x33) {
+      var sz = ((u8[6] & 0x7f) << 21) | ((u8[7] & 0x7f) << 14) |
+               ((u8[8] & 0x7f) << 7) | (u8[9] & 0x7f);
+      off = 10 + sz + ((u8[5] & 0x10) ? 10 : 0);
+      if (off < 0 || off >= u8.length - 4) off = 0;
+    }
+    for (var i = off; i < u8.length - 4; i++) {
+      if (u8[i] !== 0xFF || (u8[i + 1] & 0xE0) !== 0xE0) continue;
+      var ver = (u8[i + 1] >> 3) & 0x03;    // 3=MPEG1 2=MPEG2 0=MPEG2.5
+      var layer = (u8[i + 1] >> 1) & 0x03;  // 1=Layer III
+      if (layer !== 1) continue;
+      var idx = (u8[i + 2] >> 2) & 0x03;
+      var table = RATE_TABLE[ver];
+      if (!table || idx === 3) continue;
+      return table[idx];
+    }
+    return 0;   // 解析失败 → 用默认采样率
+  }
+
+  /* RIFF/WAVE：找 'fmt ' 块，nSamplesPerSec 在块数据第 4 字节起（小端） */
+  function wavRate(u8) {
+    if (u8.length < 44 || String.fromCharCode(u8[8], u8[9], u8[10], u8[11]) !== "WAVE") return 0;
+    var p = 12;
+    while (p + 8 <= u8.length) {
+      var sz = (u8[p + 4] | (u8[p + 5] << 8) | (u8[p + 6] << 16) | (u8[p + 7] << 24)) >>> 0;
+      if (sz > u8.length || !isFinite(sz)) return 0;
+      if (String.fromCharCode(u8[p], u8[p + 1], u8[p + 2], u8[p + 3]) === "fmt ")
+        return (u8[p + 12] | (u8[p + 13] << 8) | (u8[p + 14] << 16) | (u8[p + 15] << 24)) >>> 0;
+      p += 8 + sz + (sz & 1);   /* RIFF 块按字对齐 */
+    }
+    return 0;
+  }
+
+  /* FLAC：STREAMINFO 头里 20-bit 采样率，位置固定 */
+  function flacRate(u8) {
+    if (u8.length < 40) return 0;
+    if (u8[0] !== 0x66 || u8[1] !== 0x4C || u8[2] !== 0x61 || u8[3] !== 0x43) return 0;  // 'fLaC'
+    if ((u8[4] & 0x7f) !== 0) return 0;   // 第一个元数据块必须是 STREAMINFO(type 0)
+    return ((u8[18] << 12) | (u8[19] << 4) | (u8[20] >> 4)) >>> 0;
+  }
+
+  /* OGG(Vorbis)：识别头包 'vorbis'，rate 在其后 +11 处（小端） */
+  function oggRate(u8) {
+    if (u8.length < 40 || String.fromCharCode(u8[0], u8[1], u8[2], u8[3]) !== "OggS") return 0;
+    for (var i = 4; i < Math.min(u8.length - 18, 300); i++) {
+      if (u8[i] !== 0x76 || u8[i + 1] !== 0x6F || u8[i + 2] !== 0x72 ||
+          u8[i + 3] !== 0x62 || u8[i + 4] !== 0x69 || u8[i + 5] !== 0x73) continue;
+      if (u8[i - 1] !== 1) continue;   // ident 包首字节是 0x01
+      return (u8[i + 11] | (u8[i + 12] << 8) | (u8[i + 13] << 16) | (u8[i + 14] << 24)) >>> 0;
+    }
+    return 0;
+  }
+
+  /* MP4/M4A(AAC)：找 'mdhd' 媒体描述盒，timescale 通常即采样率。
+     只在文件头 4MB 内粗扫，正常音频轨道的 timescale 落在常见范围。 */
+  function m4aRate(u8) {
+    var cap = Math.min(u8.length, 4 << 20);
+    for (var i = 8; i < cap - 24; i++) {
+      if (u8[i] !== 0x6d || u8[i + 1] !== 0x64 || u8[i + 2] !== 0x68 || u8[i + 3] !== 0x64) continue;
+      var o = i + 8;                    // 盒头 8 字节之后的载荷
+      var ver = u8[o];
+      var tOff = o + 4 + (ver === 1 ? 16 : 8);   // v1 的 ctime/mtime 是 8 字节
+      if (tOff + 4 > cap) break;
+      return ((u8[tOff] << 24) | (u8[tOff + 1] << 16) | (u8[tOff + 2] << 8) | u8[tOff + 3]) >>> 0;
+    }
+    return 0;
+  }
+
+  function detectRate(u8) {
+    var head4 = String.fromCharCode(u8[0], u8[1], u8[2], u8[3]);
+    var r =
+      (u8[0] === 0x49 && u8[1] === 0x44 && u8[2] === 0x33) ? mp3Rate(u8) :                 // 'ID3'
+      (u8[0] === 0xFF && (u8[1] & 0xE0) === 0xE0) ? mp3Rate(u8) :                          // 裸 MPEG 帧
+      head4 === "RIFF" ? wavRate(u8) :
+      head4 === "fLaC" ? flacRate(u8) :
+      head4 === "OggS" ? oggRate(u8) :
+      (u8[4] === 0x66 && u8[5] === 0x74 && u8[6] === 0x79 && u8[7] === 0x70) ? m4aRate(u8) : 0;  // 'ftyp'
+    /* 离谱值一律视为没解析出来 */
+    return (r >= 4000 && r <= 192000) ? r : 0;
+  }
+
+  /* =======================================================
+     M4R（iPhone 铃声）＝ MP4 容器装 AAC，扩展名 .m4r。
+     浏览器内没有独立的 AAC 编码器 API（本环境 AudioEncoder
+     不可用），但 MediaRecorder 支持 audio/mp4;codecs=mp4a.40.2，
+     所以走「播放进 MediaStreamDest + 实时录制」这一条：
+     铃声上限 40 秒，转换耗时 = 音频时长，可以接受。
+     ======================================================= */
+  var RING_MAX = 39.5;   // iPhone 上限 40 秒，留 0.5 秒余量
+
+  function recordM4R(ab) {
+    return new Promise(function (resolve, reject) {
+      if (typeof MediaRecorder === "function" || typeof MediaRecorder === "object") {
+        /* ok */
+      } else {
+        reject(new Error("当前浏览器没有 MediaRecorder（Chrome / Edge 可以）"));
+        return;
+      }
+      var mime = "";
+      try {
+        mime = ["audio/mp4;codecs=mp4a.40.2", "audio/mp4"].filter(function (m) {
+          return MediaRecorder.isTypeSupported(m);
+        })[0] || "";
+      } catch (e) { /* 探测失败按不支持算 */ }
+      if (!mime) {
+        reject(new Error("当前浏览器不支持录制 MP4/AAC 铃声（Safari 不支持这条路，Chrome / Edge 可以）"));
+        return;
+      }
+
+      if (ab.duration > RING_MAX) {
+        setStatus('<span class="spin"></span>源音频超 40 秒，只取前 ' + RING_MAX + " 秒做铃声…", false, true);
+      }
+
+      var C = window.AudioContext || window.webkitAudioContext;
+      var ctx = new C({ sampleRate: ab.sampleRate });
+      var dest = ctx.createMediaStreamDestination();
+      var node = ctx.createBufferSource();
+      node.buffer = ab;
+      node.connect(dest);
+
+      var rec;
+      try {
+        rec = new MediaRecorder(dest.stream, { mimeType: mime, audioBitsPerSecond: 128000 });
+      } catch (e) {
+        closeCtx(ctx);
+        reject(new Error("MediaRecorder 创建失败：" + (e.message || e)));
+        return;
+      }
+
+      var chunks = [];
+      var done = false;
+      function stopRec() {
+        if (rec && rec.state !== "inactive") { try { rec.stop(); } catch (e) { /* 忽略 */ } }
+      }
+      rec.ondataavailable = function (e) { if (e.data && e.data.size) chunks.push(e.data); };
+      rec.onstop = function () {
+        if (done) return;
+        done = true;
+        closeCtx(ctx);
+        var blob = new Blob(chunks, { type: "audio/mp4" });
+        if (!blob.size) { reject(new Error("录制得到空内容")); return; }
+        resolve(blob);
+      };
+      rec.onerror = function () {
+        stopRec();
+        if (!done) { done = true; closeCtx(ctx); reject(new Error("录制出错")); }
+      };
+      node.onended = stopRec;
+      /* 兜底：录制状态卡住也最多等源时长 + 3 秒 */
+      setTimeout(stopRec, (Math.min(ab.duration, RING_MAX) + 3) * 1000);
+
+      node.start(0, 0, Math.min(ab.duration, RING_MAX));
+      rec.start();
+    });
+  }
+
+  /* =======================================================
+     CAF 封装。布局对齐 afconvert -f caff -d LEI16 的产物：
+     · 文件头 8 字节：'caff' + 版本 1 + flags 0
+     · desc 块：4+8 头 + 32 字节音频描述，全部大端
+       （采样率 BE double、'lpcm'、flags=0x2 即「样本小端 ints」）
+     · data 块：4+8 头 + 4 字节 editCount + 样本负载（小端）
+       块大小含 editCount 那四个字节，与基准一致
+     ======================================================= */
+  function buildCaf(ab) {
+    var chanCount = ab.numberOfChannels, N = ab.length;
+    var chans = [];
+    for (var c = 0; c < chanCount; c++) chans.push(ab.getChannelData(c));
+
+    /* Float32 → Int16 交错排列，小端 */
+    var pcm = new Uint8Array(N * 2 * chanCount);
+    var pdv = new DataView(pcm.buffer);
+    for (var i = 0, k = 0; i < N; i++) {
+      for (var c = 0; c < chanCount; c++, k += 2) {
+        var s = Math.max(-1, Math.min(1, chans[c][i]));
+        pdv.setInt16(k, s < 0 ? s * 32768 : s * 32767, true);
+      }
+    }
+
+    /* 结构头部：8 + 44(desc) + 16(data 头) = 68 字节 */
+    var head = new Uint8Array(68);
+    var hv = new DataView(head.buffer);
+    /* caff 头 */
+    head.set([0x63, 0x61, 0x66, 0x66, 0x00, 0x01, 0x00, 0x00], 0);
+    /* desc 块 */
+    head.set([0x64, 0x65, 0x73, 0x63], 8);           // 'desc'
+    hv.setBigUint64(12, BigInt(32), false);          // 块大小 32，大端
+    hv.setFloat64(20, ab.sampleRate, false);         // 采样率 BE double
+    head.set([0x6c, 0x70, 0x63, 0x6d], 28);          // 'lpcm'
+    hv.setUint32(32, 2, false);                      // flags：小端 int PCM
+    hv.setUint32(36, 2 * chanCount, false);          // bytesPerPacket
+    hv.setUint32(40, 1, false);                      // framesPerPacket
+    hv.setUint32(44, chanCount, false);              // channelsPerFrame
+    hv.setUint32(48, 16, false);                     // bitsPerChannel
+    /* data 块 */
+    head.set([0x64, 0x61, 0x74, 0x61], 52);          // 'data'
+    hv.setBigUint64(56, BigInt(4 + pcm.length), false);
+    hv.setUint32(64, 1, false);                      // editCount
+
+    var out = new Uint8Array(68 + pcm.length);
+    out.set(head, 0);
+    out.set(pcm, 68);
+    return out;
+  }
+
+  /* =======================================================
+     载入 → 源文件试听 + 自动开始转换
+     ======================================================= */
+  function loadFile(f) {
+    resetOutput();
+    if (srcURL) { URL.revokeObjectURL(srcURL); srcURL = null; }
+    srcListen.removeAttribute("src");
+    srcListen.load();
+    srcListenWrap.hidden = true;
+
+    curFile = f;
+    decodedBuf = null;
+
+    setInfo("iName", f.name || "(未命名)");
+    setInfo("iSize", fmtBytes(f.size));
+    setInfo("iDur", "—");
+    setInfo("iRate", "读取中");
+    setInfo("iChan", "—");
+    dlBtn.disabled = true;
+    resetBtn.style.display = "";
+
+    /* 源文件试听：MP3 等常见格式所有浏览器都直接能放 */
+    srcURL = URL.createObjectURL(f);
+    srcListen.src = srcURL;
+    srcListenWrap.hidden = false;
+    srcNote.hidden = true;   // 等解码知道时长后再决定要不要提示
+
+    setStatus('<span class="spin"></span>读取文件…', false, true);
+    statusText.textContent = "读取中：" + (f.name || "文件");
+
+    f.arrayBuffer().then(function (buf) {
+      var rate = detectRate(new Uint8Array(buf));
+      convertFrom(buf, rate);
+    }, function () {
+      setStatus("文件读取失败，请重新选择。", true);
+      statusText.textContent = "读取失败";
+    });
+  }
+
+  function resetOutput() {
+    if (cafURL) { URL.revokeObjectURL(cafURL); cafURL = null; }
+    if (dlURL) { URL.revokeObjectURL(dlURL); dlURL = null; }
+    cafBlob = null;
+    outListen.removeAttribute("src");
+    outListen.load();
+    outListenWrap.hidden = true;
+    dlBtn.textContent = "等待音频…";
+    dlBtn.disabled = true;
+  }
+
+  /* =======================================================
+     转换：解码 → 封装 → 就绪（下载可用，输出预览按浏览器能力显示）
+     复用 loadFile 读到的同一份 ArrayBuffer，不再二次读文件
+     ======================================================= */
+  function convertFrom(buf, rate) {
+    /* 统一建上下文：按源文件采样率建，decodeAudioData 才会输出同率 PCM */
+    function makeCtx() {
+      try {
+        return new (window.AudioContext || window.webkitAudioContext)(
+          rate ? ({ sampleRate: rate }) : undefined
+        );
+      } catch (e) {
+        return new (window.AudioContext || window.webkitAudioContext)();
+      }
+    }
+    var ctx = makeCtx();
+    if (ctx.state === "suspended") { try { ctx.resume(); } catch (e) { /* 允许继续 */ } }
+
+    setStatus('<span class="spin"></span>解码并封装中…（短音频通常一瞬间；文件越大耗时越长）', false, true);
+    statusText.textContent = "转换中：" + (curFile.name || "");
+    dlBtn.textContent = "转换中…";
+    dlBtn.disabled = true;
+
+    ctx.decodeAudioData(buf).then(function (ab) {
+      decodedBuf = ab;
+      closeCtx(ctx);
+
+      var outRate = ab.sampleRate;
+      var chanLabel = ab.numberOfChannels === 1 ? "单声道" : ab.numberOfChannels + " 声道";
+      setInfo("iDur", fmtDur(ab.duration));
+      setInfo("iRate", outRate + " Hz（输出）");
+      setInfo("iChan", chanLabel);
+      srcNote.hidden = ab.duration >= 1;
+
+      produce(ab);
+      return true;
+    }, function (err) {
+      closeCtx(ctx);
+      setStatus("解码失败：" + (err && err.message ? err.message : err) +
+        "。换一个文件试试（浏览器解不动的格式会到这一步）。", true);
+      statusText.textContent = "解码失败";
+      dlBtn.textContent = "等待音频…";
+      dlBtn.disabled = true;
+      return false;
+    });
+  }
+
+  /* =======================================================
+     按当前 target 生成交付物：
+     caf → buildCaf（瞬时）；m4r → MediaRecorder 实时录制
+     ======================================================= */
+  function chanLabel(ab) {
+    return ab.numberOfChannels === 1 ? "单声道" : ab.numberOfChannels + " 声道";
+  }
+
+  function produce(ab) {
+    dlBtn.disabled = true;
+    dlBtn.textContent = "转换中…";
+
+    if (target === "caf") {
+      var payload = buildCaf(ab);
+      var bytesPerSec = 2 * ab.numberOfChannels * ab.sampleRate;
+      var blob = new Blob([payload], { type: "audio/x-caf" });
+      activate(blob, ".caf", "audio/x-caf",
+        "转换完成：" + fmtDur(ab.duration) + " · " + ab.sampleRate + " Hz · " + chanLabel(ab) +
+        " · 输出 " + fmtBytes(blob.size) + "（约 " + fmtBytes(bytesPerSec) + "/秒 PCM）");
+    } else {
+      setStatus('<span class="spin"></span>AAC 编码中（实时录制，音频多长就录多长）…', false, true);
+      statusText.textContent = "编码中：" + (curFile.name || "");
+      recordM4R(ab).then(function (blob) {
+        var durNote = ab.duration > RING_MAX ? "（源超 40 秒，已截取前 " + RING_MAX + " 秒）" : "";
+        activate(blob, ".m4r", "audio/mp4",
+          "铃声完成：" + fmtDur(Math.min(ab.duration, RING_MAX)) + " · " + ab.sampleRate + " Hz · " +
+          chanLabel(ab) + " · 输出 " + fmtBytes(blob.size) + durNote);
+      }, function (err) {
+        statusText.textContent = "铃声生成失败";
+        statusLine.innerHTML = '<span class="err">' + esc(err.message || String(err)) + "</span>";
+      });
+    }
+  }
+
+  /* 交付物就绪：URL / 试听能力探测 / 按钮状态 / 状态文案 */
+  var IS_MOBILE = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+  function activate(blobObj, ext, pvMime, text) {
+    cafBlob = blobObj;
+    if (cafURL) URL.revokeObjectURL(cafURL);
+    if (dlURL) URL.revokeObjectURL(dlURL);
+    cafURL = URL.createObjectURL(blobObj);
+    /* 下载用哪条 URL 按端分发：
+       · 桌面 Chrome/Edge 尊重 download 属性 → 用剥掉 MIME 的副本，
+         .m4r 原样落地。
+       · 移动端（iOS/Android 浏览器）保存时一律按 blob 的 MIME 推导
+         扩展名：octet-stream 会落成「IP.octet-stream / .bin」，
+         所以回退成真 MIME（audio/mp4）——至少落成能认得的音频文件
+         （iOS 为 .mp4、安卓为 .m4a），把后缀改成 .m4r 即可当天铃声；
+         完成文案里会提示用户重命名。 */
+    dlURL = URL.createObjectURL(IS_MOBILE
+      ? blobObj
+      : blobObj.slice(0, blobObj.size, "application/octet-stream"));
+
+    /* 输出预览只在浏览器认识该容器时出现（Safari 支持 CAF；mp4 家其实 Chrome 也能放） */
+    var canPv = false;
+    try { canPv = !!document.createElement("audio").canPlayType(pvMime); } catch (e) { /* 忽略 */ }
+    if (canPv) {
+      outListen.src = cafURL;
+      outListenWrap.hidden = false;
+    } else {
+      outListen.removeAttribute("src");
+      outListen.load();
+      outListenWrap.hidden = true;
+    }
+
+    dlBtn.disabled = false;
+    dlBtn.textContent = "下载" + ext;
+    var name = ext.slice(1).toUpperCase();
+    /* 手机浏览器保存时按 MIME 改后缀（.mp4/.m4a），提醒用户重命名 */
+    var mobNote = (target === "m4r" && IS_MOBILE)
+      ? " · 手机上保存时扩展名可能被系统改成 .mp4 / .m4a，重命名后缀为 .m4r 即可作为铃声使用"
+      : "";
+    setStatus(text +
+      (canPv ? " · 可试听输出或直接下载"
+             : " · 网页内不预览 " + name.slice(0, 3) + "（当前浏览器不解码，Safari 系支持）；下载后系统播放器都能打开") +
+      mobNote);
+    statusText.textContent = (curFile.name || "") + " → " + name + " 完成";
+  }
+
+  /* =======================================================
+     输出格式切换：切完立即用已解码的缓冲重produce
+     ======================================================= */
+  function setTarget(t) {
+    if (target === t) return;
+    target = t;
+    $("fmtCaf").classList.toggle("active", t === "caf");
+    $("fmtM4r").classList.toggle("active", t === "m4r");
+    $("fmtNote").innerHTML = t === "caf"
+      ? "16-bit PCM，无压缩，体积大（约 176 KB/秒/声道）；采样率保持源文件。选好文件自动转换。"
+      : "AAC-LC 装进 MP4 容器，改扩展名 .m4r 就是 iPhone 铃声；上限 40 秒，超出自动取前 39.5 秒。Chrome / Edge 支持这条路；手机上保存时后缀可能被系统改写，手动改成 .m4r 即可。";
+    if (decodedBuf && curFile) produce(decodedBuf);
+    else {
+      dlBtn.textContent = "等待音频…";
+      dlBtn.disabled = true;
+      setStatus("等待选择音频……", false);
+    }
+  }
+
+  /* 解码完把上下文关掉，省一个常驻音频线程 */
+  function closeCtx(ctx) {
+    if (ctx && typeof ctx.close === "function") { try { ctx.close(); } catch (e) { /* 忽略 */ } }
+  }
+
+  /* =======================================================
+     下载
+     ======================================================= */
+  function download() {
+    if (!cafBlob || !dlURL) return;
+    var a = document.createElement("a");
+    a.href = dlURL;
+    a.download = (curFile && curFile.name ? curFile.name.replace(/\.[^.]+$/, "") : "audio") +
+                 (target === "caf" ? ".caf" : ".m4r");
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+
+  /* =======================================================
+     绑定事件：选择 / 拖放 / 按钮
+     ======================================================= */
+  drop.addEventListener("click", function () { filePick.click(); });
+  drop.addEventListener("keydown", function (e) {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); filePick.click(); }
+  });
+  filePick.addEventListener("change", function () {
+    if (filePick.files && filePick.files[0]) loadFile(filePick.files[0]);
+    filePick.value = "";   // 允许重复选同一个文件
+  });
+
+  /* 整页拖放：dragover/enter 必须 preventDefault，否则浏览器会导航走 */
+  document.addEventListener("dragover", function (e) { e.preventDefault(); });
+  document.addEventListener("dragenter", function (e) { e.preventDefault(); });
+  document.addEventListener("drop", function (e) {
+    e.preventDefault();
+    var f = e.dataTransfer && e.dataTransfer.files ? e.dataTransfer.files[0] : null;
+    if (f) loadFile(f);
+  });
+
+  dlBtn.addEventListener("click", download);
+  resetBtn.addEventListener("click", function () {
+    filePick.click();
+  });
+  $("fmtCaf").addEventListener("click", function () { setTarget("caf"); });
+  $("fmtM4r").addEventListener("click", function () { setTarget("m4r"); });
+})();
+</script>
+</body>
+</html>
