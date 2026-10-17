@@ -110,6 +110,8 @@
       display: flex; align-items: center; gap: 10px;
     }
     footer .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); flex: 0 0 auto; }
+    footer .keys { color: var(--muted); font-size: 11px; cursor: default; }
+    footer .keys b { color: var(--text); font-weight: 500; }
     footer .spacer { flex: 1; }
     footer .acts { display: flex; gap: 6px; }
     footer button {
@@ -197,7 +199,7 @@
       #pvPane, body.resized #pvPane { flex: 1 1 0; min-height: 0; }
       #src, #pv { padding: 10px 14px 24px; }
       footer { padding: 8px 12px; }
-      footer #stat { display: none; }
+      footer #stat, footer .keys { display: none; }
     }
 
     ::-webkit-scrollbar { width: 9px; height: 9px; }
@@ -234,12 +236,12 @@
     <button data-md="ol" title="有序列表">1. 编号</button>
     <button data-md="task" title="任务列表">☑ 任务</button>
     <button data-md="quote" title="引用">❝ 引用</button>
-    <button data-md="fence" title="代码块">▭ 代码块</button>
+    <button data-md="fence" title="代码块（⌘/Ctrl+E）">▭ 代码块</button>
     <button data-md="hr" title="分隔线">— 分隔线</button>
     <span class="sep"></span>
     <span class="t">链接</span>
     <button data-md="link" title="链接（⌘/Ctrl+K）">🔗 链接</button>
-    <button data-md="image" title="图片">🖼 图片</button>
+    <button data-md="image" title="图片（⌘/Ctrl+G）">🖼 图片</button>
     <button data-md="table" title="表格">▦ 表格</button>
   </div>
 
@@ -250,7 +252,7 @@
         <span class="val" id="srcInfo"></span>
       </div>
       <textarea id="src" spellcheck="false"
-        placeholder="# 直接开始写 Markdown&#10;&#10;**加粗**、*斜体*、`行内代码`，点上方按钮可快速插入。&#10;或点右上角「打开文件」，把本地 .md 拖进来也行。"></textarea>
+        placeholder="# 直接开始写 Markdown&#10;&#10;**加粗**、*斜体*、`行内代码`，点上方按钮可快速插入；&#10;⌘/Ctrl+B 粗体、I 斜体、K 链接、G 图片、E 代码块，Tab 缩进、Shift+Tab 反缩进。&#10;或点右上角「打开文件」，把本地 .md 拖进来也行。"></textarea>
     </section>
 
     <div id="split" title="拖动调整两栏宽度"></div>
@@ -266,6 +268,7 @@
 
   <footer>
     <span class="dot"></span><span id="stat">加载中…</span>
+    <span class="keys" title="Windows / Linux 下对应 Ctrl+B、Ctrl+I、Ctrl+K、Ctrl+G、Ctrl+E">⌘<b>B</b> 粗体 · ⌘<b>I</b> 斜体 · ⌘<b>K</b> 链接 · ⌘<b>G</b> 图片 · ⌘<b>E</b> 代码块 · <b>Tab</b> 缩进</span>
     <span class="spacer"></span>
     <span class="acts">
       <button id="copyHtml">复制 HTML</button>
@@ -770,6 +773,8 @@
     if (mod && k === "b") { ACTIONS.bold(); e.preventDefault(); return; }
     if (mod && k === "i") { ACTIONS.italic(); e.preventDefault(); return; }
     if (mod && k === "k") { ACTIONS.link(); e.preventDefault(); return; }
+    if (mod && k === "g") { ACTIONS.image(); e.preventDefault(); return; }
+    if (mod && k === "e") { ACTIONS.fence(); e.preventDefault(); return; }
     if (e.key === "Tab") {
       e.preventDefault();
       var v = src.value, a = src.selectionStart, b = src.selectionEnd;

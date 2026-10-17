@@ -1,26 +1,46 @@
 # 从这里开始写你的文档
 sample.md 是编辑器的默认起点，也是一个语法速查示例。
-想改默认内容，直接编辑本文件即可，不用动 markdown.html。
+想改默认内容，直接编辑本文件即可，最终导出并覆盖 sample.md 即可。
 
 ## 段落与强调
 直接写字就是段落，回车即换行。**加粗**、*斜体*、~~删除线~~、`行内代码`，
-还可以 [插入链接](https://example.com)。
+还可以[插入链接](https://example.com)。
 
 ## 列表
 - 无序列表项
   - 子项（前面缩两个空格）
+
+**为什么会这样：**
+- 系统提示词（system prompt）
+- CLAUDE.md 文件（全局和项目级别）
+- 记忆文件
+- MCP 服务器的工具定义
+- Skill 的名称和描述
+
+### 任务列表
 - [ ] 任务项：未完成
 - [x] 任务项：已完成
+- [ ] 可以内嵌 **markdown** 格式（**加粗**、`行内代码`），比如：**本周三下午5点**必须之前完成`example.md`的重构。~~V1 版本已废弃~~
+方括号中间**必须有空格**，`-[ ]` 不行，要 `- [ ]`。GitHub 里还可以直接点击勾选
 
+## 有序列表：**数字 + 英文句点 `.` + 空格**，后面写内容
 1. 有序列表第一步
 2. 有序列表第二步
+
+### 序号数字可以全部写 1.，渲染时会自动递增！好处：插入 / 删除条目时，不用手动修改后面所有编号
+1. 有序列表第一步
+1. 有序列表第二步
+1. 有序列表第三步
 
 ## 引用
 > 危机即转机。
 > > 引用里还能再套一层引用。
 
-## 链接
-[链接文字Github](https://github.com)
+> 一级引用，可以写**加粗**、`行内代码`。
+>
+>> 二级嵌套引用
+>>
+>>> 三级嵌套引用
 
 ## 图片
 ![图片说明](https://placehold.co/240x160.png)
@@ -31,37 +51,19 @@ echo "hello, $USER"
 git status --short
 ```
 
-### MySQL 常用语句:
-```sql
-CREATE DATABASE my_sample_database CHARACTER SET 'utf8' COLLATE 'utf8_general_ci';
-use my_sample_database;
+### AbortController for Cancellable fetch:
+```js
+const controller = new AbortController();
+const { signal } = controller;
 
-/* 增加一列 */: 
-ALTER TABLE `table_name` ADD `new_column` INT(20) NOT NULL AFTER `old_column`;
+fetch('/api/data', { signal })
+  .then((r) => r.json())
+  .catch((e) => {
+    if (e.name !== 'AbortError') throw e;
+  });
 
-/* 批量替换https */
-UPDATE k_product SET pic = replace(pic, 'http://images.example.com','https://images.example.com');
-
-/* 删除表 */
-DROP TABLE IF EXISTS `Cart`;
-DROP TABLE IF EXISTS `Item`;
-
-/* 新建表 */
-CREATE TABLE `Item` (
-  `item_id` int(11) unsigned NOT NULL AUTO_INCREMENT,
-  `item_desc` varchar(20) NOT NULL,
-  `item_price` decimal(10,0) NOT NULL,
-  PRIMARY KEY (`item_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8;
-
-/* 新建表(含外键关系) */
-CREATE TABLE `Cart_Items` (
-  `cart_id` int(11) unsigned NOT NULL,
-  `item_id` int(11) unsigned NOT NULL,
-  PRIMARY KEY (`cart_id`,`item_id`),
-  CONSTRAINT `fk_cart` FOREIGN KEY (`cart_id`) REFERENCES `Cart` (`cart_id`),
-  CONSTRAINT `fk_item` FOREIGN KEY (`item_id`) REFERENCES `Item` (`item_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+// later…
+controller.abort();
 ```
 
 ## 表格
