@@ -107,7 +107,12 @@ favicon 用内联 data:（深绿圆角方块 + 绿色 `>_`），每页相同，�
   左栏用 `.panel` 包裹，内部以 `.group` 分块（相邻块 `margin-top: 18px`），
   每块标题 `.group-title`——11.5px / 600 / muted / `letter-spacing: .4px` /
   `flex` 两端布局（单列版的 `.card-title` 与它同源，仅字号 0.5px 之差，勿混用）。
-  文件入场可用 `.slot`（虚线圆角、点击/拖放，`filled` 态转实线）替代 `.drop`。
+  文件入场可用 `.slot`（虚线圆角，**点击与拖放必须接同一个选文件入口**，`filled` 态转实线）
+  替代 `.drop`；`.slot` 与其后首块之间留 18px（给 `.slot` 写 `margin-bottom`，与组距同节奏）。
+  两栏各自顶部可放 `.col-head` 标题条（12px / 600 / muted、内距 9px 16px），
+  **两栏的 `.col-head` 必须等高**：要么两侧头部都放动作按钮（`json-format.html` 惯例），
+  要么某一侧没有动作时用 `min-height` 锁死（典型 41px = mini 按钮高 21 + 上下内距 18 + 边 1，
+  并给栏头按钮加 `line-height: 1` 抵消各平台字体行高差）。一侧纯文字、一侧带按钮会矮一截。
 
 响应式断点：编辑器类 ≤720px 时隐藏次要信息；两栏工具 ≤820px 折单栏。
 
@@ -165,6 +170,10 @@ favicon 用内联 data:（深绿圆角方块 + 绿色 `>_`），每页相同，�
      run()（同步解析 + 首批渲染）结束后 hideBusy；onerror 里同样 hideBusy。 */
 </script>
 ```
+- **展示型代码块 .codeblock**：panel 底 + mono 小字号，用于给用户复核产物的形态；
+  **不设 `max-height`**，块内不出现自家滚动条（高度超长时整页滚动兜底）。
+  单条特长的编码串（data URI、base64 等）不直接铺开展示——编码成品走复制按钮通道，
+  展示端给排版后的可读形式（元素一行、长值断行），并附一行小字说明成品从哪复制。
 - **试听/下载混用 blob URL 时**，试听与下载用两条 URL：试听带真实 MIME（音频 `<audio>` 才认），
   下载在桌面端用 `blob.slice(0, size, "application/octet-stream")` 剥 MIME 保住
   `download` 属性的扩展名；移动端（UA 含 Mobi/Android/iPhone/iPad/iPod）浏览器保存时

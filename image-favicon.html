@@ -1,0 +1,814 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PNG → 内联图标</title>
+  <meta name="description" content="把小尺寸、带透明通道的 PNG 转成可直接内联的 SVG favicon：前景描边矢量化，透明部分天然保留，纯前端处理，图片不上传" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23171c24'/%3E%3Ctext x='16' y='23' font-size='18' font-weight='bold' font-family='ui-monospace,Menlo,monospace' fill='%233dd68c' text-anchor='middle'%3E%3E_%3C/text%3E%3C/svg%3E" />
+  <style>
+    /* 与各工具子页面共用同一套色板，改这里即可整体换肤 */
+    :root {
+      --bg: #0e1116;
+      --panel: #171c24;
+      --panel-2: #1e2632;
+      --border: #2a3340;
+      --text: #e8edf4;
+      --muted: #8b97a8;
+      --accent: #3dd68c;
+      --accent-2: #2bb673;
+      --warn: #ffb340;
+      --radius: 10px;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+              "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; }
+    /* 多处用 hidden 切换显隐，而这些元素又自带 display 规则，
+       不加这一条的话 hidden 会被作者样式盖掉，看上去「没反应」 */
+    [hidden] { display: none !important; }
+
+    body {
+      background: var(--bg); color: var(--text);
+      font-family: var(--sans); font-size: 13px;
+      display: flex; flex-direction: column; overflow: hidden;
+    }
+
+    header {
+      flex: 0 0 auto; padding: 11px 22px;
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    }
+    header h1 { font-size: 16px; margin: 0; font-weight: 600; letter-spacing: .3px; }
+    header .hint { font-size: 12px; color: var(--muted); }
+    header .spacer { flex: 1 1 auto; }
+    /* 打开文件按钮：照 markdown.html 的样式与交互（含拖拽时闪亮引导） */
+    header .open {
+      font: inherit; font-size: 12px; color: var(--text);
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: 7px; padding: 5px 12px; cursor: pointer;
+      transition: background .15s, border-color .15s, color .15s;
+    }
+    header .open:hover, header .open.flash { border-color: var(--accent); color: var(--accent); }
+
+    .layout {
+      flex: 1 1 auto;
+      display: grid;
+      grid-template-columns: minmax(340px, 380px) minmax(0, 1fr);
+      grid-template-rows: minmax(0, 1fr);
+      min-height: 0;
+    }
+    .column { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+    .column.left { border-right: 1px solid var(--border); }
+
+    .col-head {
+      flex: 0 0 auto; padding: 9px 16px; min-height: 41px;
+      /* 左右两栏只有一栏带动作按钮时也保持等高：
+         mini 按钮（line-height:1 后高 21px）+ 上下 9px 内距 + 1px 边 = 41 */
+      font-size: 12px; font-weight: 600; color: var(--muted); letter-spacing: .5px;
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 10px; border-bottom: 1px solid var(--border);
+    }
+    .col-head .actions { display: flex; gap: 6px; align-items: center; }
+    .col-head .mini { line-height: 1; }   /* 锁死按钮盒高，跨平台字体行高不一也不破等高 */
+
+    button {
+      font: inherit; font-size: 12px; padding: 6px 12px;
+      border-radius: 7px; border: 1px solid var(--border);
+      background: var(--panel-2); color: var(--text);
+      cursor: pointer; white-space: nowrap;
+      transition: background .15s, border-color .15s, opacity .15s;
+    }
+    button:hover:not(:disabled) { background: #232c39; border-color: #3a4557; }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+    button.primary { background: var(--accent); border-color: var(--accent); color: #062315; font-weight: 600; }
+    button.primary:hover:not(:disabled) { background: var(--accent-2); border-color: var(--accent-2); }
+    button.mini { padding: 4px 9px; font-size: 11px; }
+
+    .panel { padding: 16px 18px 12px; }
+    .group + .group { margin-top: 18px; }
+    .group-title {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 8px; font-size: 11.5px; font-weight: 600; color: var(--muted);
+      letter-spacing: .4px; margin-bottom: 9px;
+    }
+    .group-title small { color: var(--muted); font-weight: 400; margin-left: 5px; }
+
+    .seg { display: grid; gap: 8px; }
+    .seg.c2 { grid-template-columns: repeat(2, 1fr); }
+    .seg.c5 { grid-template-columns: repeat(5, 1fr); }
+    .seg.c3 { grid-template-columns: repeat(3, 1fr); }
+    .seg button { padding: 8px 2px; font-size: 12px; }
+    .seg button.on { background: var(--accent); border-color: var(--accent); color: #062315; font-weight: 600; }
+
+    .hint-line { margin-top: 7px; font-size: 11px; line-height: 1.5; color: var(--muted); }
+    .hint-line b { color: var(--text); font-weight: 600; }
+    .hint-line code { font-family: var(--mono); color: var(--text); }
+    .hint-line.ok { color: var(--accent); }
+    .hint-line.warn { color: var(--warn); }
+    .hint-line + .hint-line { margin-top: 4px; }
+
+    /* 文件槽：虚线圆角 / 拖入或点击，加载后显示缩略图与文件信息 */
+    .slot {
+      border: 1px dashed var(--border); border-radius: var(--radius);
+      padding: 13px 15px; cursor: pointer;
+      display: flex; align-items: center; gap: 10px;
+      margin-bottom: 18px;          /* 与下方首块 .group 拉开间距，节奏对齐组距 */
+      transition: border-color .2s, background-color .2s;
+    }
+    .slot:hover, .slot.dragover { border-color: var(--accent); background: rgba(61, 214, 140, .05); }
+    .slot.filled { border-style: solid; background: var(--panel); }
+    .slot .ic { flex: 0 0 auto; font-size: 18px; opacity: .8; }
+    .slot .t { flex: 1 1 auto; min-width: 0; }
+    .slot .t .n { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .slot .t .s { font-size: 11px; color: var(--muted); margin-top: 2px; }
+    .slot img { width: 40px; height: 40px; flex: 0 0 auto; display: block; image-rendering: pixelated; }
+    input[type="color"] {
+      width: 34px; height: 24px; padding: 0 2px; border: 1px solid var(--border);
+      border-radius: 6px; background: var(--panel-2); cursor: pointer; align-self: center;
+    }
+
+    /* ---- 右栏预览 ---- */
+    .view {
+      flex: 1 1 auto; min-height: 0; position: relative;
+      overflow: auto; background: var(--bg);
+    }
+    .empty {
+      position: absolute; inset: 0; padding: 24px;
+      display: flex; align-items: center; justify-content: center;
+      text-align: center; color: var(--muted);
+      font: 12px/1.8 var(--sans);
+    }
+    .pv-wrap { padding: 18px 20px 26px; }
+
+    /* 透明底棋盘格：16/32/64 一排对照 */
+    .sizes { display: flex; gap: 14px; align-items: flex-end; }
+    .sizes .cell { text-align: center; }
+    .chess {
+      display: inline-block;
+      background-image: repeating-conic-gradient(#232b36 0% 25%, #182029 0% 50%);
+      background-size: 12px 12px;
+      border: 1px solid var(--border); border-radius: 8px;
+    }
+    .chess img, .chess > div { display: block; }
+    .chess.c16 img { width: 16px; height: 16px; padding: 8px; }
+    .chess.c32 img { width: 32px; height: 32px; padding: 6px; }
+    .chess.c64 img { width: 64px; height: 64px; padding: 4px; }
+    .sizes .lbl { margin-top: 6px; font-family: var(--mono); font-size: 10px; color: var(--muted); }
+
+    /* 模拟浏览器标签页：把 favicon 放进真实使用场景里看一眼 */
+    .tabs {
+      display: flex; gap: 6px; margin-top: 10px;
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: 8px; padding: 6px 6px 0;
+    }
+    .tab {
+      display: flex; align-items: center; gap: 7px;
+      background: var(--bg); border: 1px solid var(--border); border-bottom: none;
+      border-radius: 8px 8px 0 0; padding: 7px 12px;
+      font-size: 11px; color: var(--muted); max-width: 190px;
+    }
+    .tab.on { color: var(--text); }
+    .tab img { width: 16px; height: 16px; flex: 0 0 auto; }
+    .tab span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tab .globe { flex: 0 0 16px; text-align: center; font-size: 12px; }
+    /* 浅色主题的浏览器标签栏：别人站点未必是深色， favicon 要两头都验收 */
+    .tabs.light { background: #dee1e6; border-color: #c9cdd3; }
+    .tabs.light .tab { background: #fff; border-color: #c9cdd3; color: #79818b; }
+    .tabs.light .tab.on { color: #3c4043; }
+    .tabs.light .tab:not(.on) { background: transparent; }
+
+    .codeblock {
+      margin-top: 18px; padding: 12px 14px;
+      background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+      font-family: var(--mono); font-size: 11px; line-height: 1.6;
+      color: var(--muted); overflow-x: auto; white-space: pre-wrap; word-break: break-all;
+    }
+    .codeblock code { color: var(--text); }
+
+    footer {
+      flex: 0 0 auto; padding: 9px 20px;
+      border-top: 1px solid var(--border);
+      font-size: 12px; color: var(--muted);
+      display: flex; align-items: center; gap: 8px;
+    }
+    footer .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); flex: 0 0 auto; }
+    .foot-meta {
+      flex: 0 0 auto; display: flex; gap: 16px;
+      font-family: var(--mono); font-size: 11px;
+    }
+    .foot-meta .v.hl { color: var(--accent); font-weight: 600; }
+    .spacer2 { flex: 1 1 auto; }
+
+    @media (max-width: 820px) {
+      html, body { height: auto; }
+      body { overflow: visible; }
+      .layout { grid-template-columns: 1fr; grid-template-rows: auto auto; }
+      .column.left { border-right: none; border-bottom: 1px solid var(--border); }
+      .view { height: 70vh; }
+      header { padding: 11px 14px; }
+      header h1 { font-size: 15px; }
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>🖼️ PNG → 内联图标</h1>
+    <span class="hint">小尺寸带透明通道的 PNG → 可内联的 SVG favicon · 描边矢量化在浏览器内完成 · 图片不上传</span>
+    <span class="spacer"></span>
+    <button type="button" class="open" id="openBtn" title="打开本地图片">📂 打开图片</button>
+    <input type="file" id="filePick" accept="image/png,image/jpeg,image/webp,image/*" hidden>
+  </header>
+
+  <div class="layout">
+
+    <!-- ============ 左列：文件与控件 ============ -->
+    <section class="column left">
+      <div class="col-head"><span>图片来源</span></div>
+      <div class="scroll">
+        <div class="panel">
+
+          <div class="slot" id="slot">
+            <span class="ic" id="slotIc">📄</span>
+            <span class="t">
+              <span class="n" id="slotName">点击选择，或把图片拖进本页</span>
+              <span class="s" id="slotMeta">接受 PNG / JPEG / WebP等，越小越简单效果越好</span>
+            </span>
+            <img id="slotImg" hidden alt="">
+          </div>
+
+          <div class="group">
+            <div class="group-title"><span>颜色数</span><small>前景自动量化（透明背景不占名额）</small></div>
+            <div class="seg c5" id="colorSeg">
+              <button type="button" data-k="2">2</button>
+              <button type="button" data-k="3">3</button>
+              <button type="button" data-k="4" class="on">4</button>
+              <button type="button" data-k="6">6</button>
+              <button type="button" data-k="10">10</button>
+            </div>
+          </div>
+
+          <div class="group">
+            <div class="group-title"><span>轮廓简化</span><small>越小越贴像素</small></div>
+            <div class="seg c3" id="simplSeg">
+              <button type="button" data-e="0">关（最贴像素）</button>
+              <button type="button" data-e="0.75" class="on">标准</button>
+              <button type="button" data-e="1.5">强（更省字节）</button>
+            </div>
+          </div>
+
+          <div class="group">
+            <div class="group-title"><span>圆角底块</span><small>本站 favicon 的惯例造型</small></div>
+            <div class="seg c2" id="backSeg">
+              <button type="button" data-b="0" class="on">无</button>
+              <button type="button" data-b="1">加底色</button>
+            </div>
+            <div class="hint-line" id="bgRow" hidden>
+              底色 <input type="color" id="bgColor" value="#171c24">
+              （角半径随画布等比缩放，约 19%）
+            </div>
+          </div>
+
+          <div class="group">
+            <div class="group-title"><span>说明</span></div>
+            <div class="hint-line">只矢量化 <b>alpha ≥ 50%</b> 的前景像素；半透明边缘按阈值归入透明或实心，输出即是干脆的二值边缘。</div>
+            <div class="hint-line">透明边角自动裁掉，所以 <code>viewBox</code> 恰好贴住内容；背景透明天然保留，无需处理。</div>
+            <div class="hint-line">命令行对照：<code>potrace</code>（黑白描边）、<code>ImageMagick convert -resize</code> + 手工量化，本页为其彩色多层的自动版。</div>
+            <div class="hint-line">限制：超过 512px 的图会缩到 256px 再描边；内容越复杂、颜色数越高，输出越大。</div>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 右列：预览与导出 ============ -->
+    <section class="column right">
+      <div class="col-head">
+        <span>预览与导出</span>
+        <div class="actions">
+          <button type="button" class="mini" id="copySvgBtn" disabled>复制 SVG</button>
+          <button type="button" class="mini" id="copyLinkBtn" disabled>复制 &lt;link&gt;</button>
+          <button type="button" class="mini" id="dlBtn" disabled>下载 .svg</button>
+        </div>
+      </div>
+
+      <div class="view">
+        <div class="empty" id="empty"><span id="emptyText">把 PNG 拖进来或点左上「打开图片」<br />16 / 32 / 64 三档实际尺寸预览放在透明棋盘格上，含浏览器标签页效果</span></div>
+
+        <div class="pv-wrap" id="pvWrap" hidden>
+          <div class="sizes">
+            <div class="cell"><span class="chess c16"><img id="pv16" alt=""></span><div class="lbl">16</div></div>
+            <div class="cell"><span class="chess c32"><img id="pv32" alt=""></span><div class="lbl">32</div></div>
+            <div class="cell"><span class="chess c64"><img id="pv64" alt=""></span><div class="lbl">64</div></div>
+            <div class="cell" style="margin-left:6px"><span class="chess c32"><img id="pvSrc" alt=""></span><div class="lbl">原图</div></div>
+          </div>
+          <div class="hint-line">SVG 没有固定像素——16 / 32 / 64 三格是<b>同一份矢量</b>在不同显示尺寸下的渲染预览，代码是同一份：放大不会糊、缩小不丢形。</div>
+
+          <div class="codeblock" id="linkBlock"><code id="linkCode"></code></div>
+          <div class="hint-line" id="linkHint">整行 <code>&lt;link rel="icon" …&gt;</code> 是一条超长 base 行，不适合直接展示——用右上「复制 &lt;link&gt;」按钮拿成品，或复制这里的 SVG 源码自己包。</div>
+
+          <div class="group-title" style="margin-top:18px"><span>favicon 效果预览</span><small>拟真浏览器标签栏 · 浅色 / 深色</small></div>
+          <div class="tabs light">
+            <div class="tab on"><img id="tabIcoA" alt=""><span>你的站点标题</span></div>
+            <div class="tab"><span class="globe">🌐</span><span>另一个标签页</span></div>
+          </div>
+          <div class="tabs">
+            <div class="tab on"><img id="tabIcoB" alt=""><span>你的站点标题</span></div>
+            <div class="tab"><span class="globe">🌐</span><span>另一个标签页</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <footer>
+    <span class="dot"></span>
+    <span class="foot-meta" id="metaRow" hidden>
+      <span><span class="v hl" id="mColors">—</span> 色</span>
+      <span><span id="mLoops">—</span> 段路径</span>
+      <span>SVG <span class="v" id="mBytes">—</span> / 源 <span class="v" id="mSrc">—</span></span>
+    </span>
+    <span class="spacer2"></span>
+    <span id="statusText">等待选择图片…</span>
+  </footer>
+
+<script>
+(function () {
+  "use strict";
+
+  var $ = function (id) { return document.getElementById(id); };
+
+  function humanSize(n) {
+    if (n < 1024) return n + " B";
+    if (n < 1048576) return (n / 1024).toFixed(1) + " KB";
+    return (n / 1048576).toFixed(2) + " MB";
+  }
+  function setStatus(t, warn) {
+    var el = $("statusText");
+    el.textContent = t;
+    el.style.color = warn ? "var(--warn)" : "";
+  }
+
+  /* =========================================================
+     量化：中位数切分起手（按通道极差优先劈箱，小而显眼的簇
+     保得住），再跑几轮 k-means 收敛中心。只喂前景像素，
+     透明背景完全不占调色板名额。
+     ========================================================= */
+  function quantize(list, K) {
+    if (!list.length) return [];
+    // 劈箱优先级 = 最宽通道的极差；极差为 0 就不再劈
+    function widest(box) {
+      var ch = -1, range = 0;
+      for (var c = 0; c < 3; c++) {
+        var lo = 255, hi = 0;
+        for (var i = 0; i < box.length; i++) {
+          var v = box[i][c];
+          if (v < lo) lo = v;
+          if (v > hi) hi = v;
+        }
+        if (hi - lo > range) { range = hi - lo; ch = c; }
+      }
+      return { ch: ch, range: range };
+    }
+    var boxes = [list];
+    while (boxes.length < K) {
+      var bi = -1, br = 0, bc = 0;
+      for (var b = 0; b < boxes.length; b++) {
+        var w = widest(boxes[b]);
+        if (w.range > br) { br = w.range; bi = b; bc = w.ch; }
+      }
+      if (bi === -1) break;              // 全部单色，劈不动了
+      var bx = boxes.splice(bi, 1)[0];
+      bx.sort(function (a, c) { return a[bc] - c[bc]; });
+      var mid = bx.length >> 1;
+      boxes.push(bx.slice(0, mid), bx.slice(mid));
+    }
+    var centers = boxes.map(function (box) {
+      var s = [0, 0, 0], n = box.length;
+      for (var i = 0; i < n; i++) { s[0] += box[i][0]; s[1] += box[i][1]; s[2] += box[i][2]; }
+      return [s[0] / n | 0, s[1] / n | 0, s[2] / n | 0];
+    });
+    // k-means 精修：小簇的中心会被邻居拽走，几轮迭代拉回来
+    for (var it = 0; it < 8; it++) {
+      var acc = centers.map(function () { return [0, 0, 0, 0]; });
+      for (var p = 0; p < list.length; p++) {
+        var best = 0, bd = Infinity;
+        for (var k = 0; k < centers.length; k++) {
+          var c = centers[k], dl = list[p];
+          var d = (c[0] - dl[0]) * (c[0] - dl[0]) + (c[1] - dl[1]) * (c[1] - dl[1]) + (c[2] - dl[2]) * (c[2] - dl[2]);
+          if (d < bd) { bd = d; best = k; }
+        }
+        var a = acc[best];
+        a[0] += list[p][0]; a[1] += list[p][1]; a[2] += list[p][2]; a[3]++;
+      }
+      var moved = false;
+      for (var m = 0; m < centers.length; m++) {
+        if (acc[m][3] === 0) continue;
+        var nc = [acc[m][0] / acc[m][3] | 0, acc[m][1] / acc[m][3] | 0, acc[m][2] / acc[m][3] | 0];
+        if (nc[0] !== centers[m][0] || nc[1] !== centers[m][1] || nc[2] !== centers[m][2]) { moved = true; centers[m] = nc; }
+      }
+      if (!moved) break;
+    }
+    // 清掉没兜住任何像素的空簇
+    for (var vi = 0; vi < 2; vi++) {
+      centers = centers.filter(function (ct) {
+        for (var q = 0; q < list.length; q++) {
+          var d = (ct[0] - list[q][0]) * (ct[0] - list[q][0]) + (ct[1] - list[q][1]) * (ct[1] - list[q][1]) + (ct[2] - list[q][2]) * (ct[2] - list[q][2]);
+          if (d === 0) return true;
+        }
+        return list.some(function (dl) {
+          return Math.abs(ct[0] - dl[0]) + Math.abs(ct[1] - dl[1]) + Math.abs(ct[2] - dl[2]) <= 12;
+        });
+      });
+    }
+    return centers;
+  }
+
+  /* =========================================================
+     轮廓追踪：有向边界缝 + 端点缝合（PoC 验证过的 crack 法）。
+     每个色层独立追踪，evenodd 配 fill-rule 自动处理孔洞。
+     ========================================================= */
+  function traceLoops(mask, W, H) {
+    var edges = new Map();
+    function key(x, y) { return x + "," + y; }
+    function addEdge(x1, y1, x2, y2) {
+      var k = key(x1, y1);
+      if (!edges.has(k)) edges.set(k, []);
+      edges.get(k).push([x1, y1, x2, y2]);
+    }
+    for (var y = 0; y < H; y++) for (var x = 0; x < W; x++) {
+      var v = mask[y * W + x];
+      if (!v) continue;
+      var up = y === 0 ? 0 : mask[(y - 1) * W + x];
+      var dn = y === H - 1 ? 0 : mask[(y + 1) * W + x];
+      var lf = x === 0 ? 0 : mask[y * W + x - 1];
+      var rt = x === W - 1 ? 0 : mask[y * W + x + 1];
+      if (!up) addEdge(x + 1, y, x, y);
+      if (!dn) addEdge(x, y + 1, x + 1, y + 1);
+      if (!lf) addEdge(x, y, x, y + 1);
+      if (!rt) addEdge(x + 1, y + 1, x + 1, y);
+    }
+    var loops = [], used = new Set();
+    edges.forEach(function (list0, k0) {
+      for (var s = 0; s < list0.length; s++) {
+        if (used.has(k0 + "@" + s)) continue;
+        var loop = [], ck = k0, ci = s, guard = 0;
+        while (guard++ < 400000) {
+          var segKey = ck + "@" + ci;
+          if (used.has(segKey)) break;
+          used.add(segKey);
+          var seg = edges.get(ck)[ci];
+          loop.push([seg[0], seg[1]]);
+          var nk = key(seg[2], seg[3]);
+          var outs = edges.get(nk), found = -1;
+          for (var q = 0; q < outs.length; q++) {
+            if (!used.has(nk + "@" + q)) { found = q; break; }
+          }
+          if (found === -1) break;
+          ck = nk; ci = found;
+        }
+        if (loop.length >= 3) loops.push(loop);
+      }
+    });
+    return loops;
+  }
+
+  /* RDP 折线简化：eps=0 时原样返回 */
+  function rdp(pts, eps) {
+    if (eps <= 0 || pts.length < 3) return pts;
+    var stack = [[0, pts.length - 1]], keep = new Array(pts.length).fill(false), out = [];
+    keep[0] = keep[pts.length - 1] = true;
+    while (stack.length) {
+      var seg = stack.pop(), a = seg[0], b = seg[1];
+      if (b - a < 2) continue;
+      var x1 = pts[a][0], y1 = pts[a][1], x2 = pts[b][0], y2 = pts[b][1];
+      var dx = x2 - x1, dy = y2 - y1, len = Math.sqrt(dx * dx + dy * dy) || 1e-9;
+      var dmax = 0, idx = -1;
+      for (var i = a + 1; i < b; i++) {
+        var d = Math.abs(dy * (pts[i][0] - x1) - dx * (pts[i][1] - y1)) / len;
+        if (d > dmax) { dmax = d; idx = i; }
+      }
+      if (dmax > eps) {
+        keep[idx] = true;
+        stack.push([a, idx], [idx, b]);
+      }
+    }
+    for (var j = 0; j < pts.length; j++) if (keep[j]) out.push(pts[j]);
+    return out;
+  }
+
+  /* =========================================================
+     图像进出：File → Image → canvas → 前景像素 / alpha 阈值归一
+     ========================================================= */
+  var ALPHA_ON = 128;          // ≥50% 不透明算前景
+  var MAX_SIDE = 256;          // 超过 512px 的输入缩到 256 再描边
+  var PREF_KEY = "png-icon:prefs";
+  var state = {
+    K: 4, eps: 0.75, backdrop: false,
+    bgColor: "#171c24",
+    img: null,                  // { w, h, data(Uint8ClampedArray), name, srcBytes }
+    svg: "", dataURI: "", fileURL: null
+  };
+
+  function loadPrefs() {
+    try {
+      var o = JSON.parse(localStorage.getItem(PREF_KEY) || "{}");
+      if (o.K) state.K = o.K;
+      if (typeof o.eps === "number") state.eps = o.eps;
+    } catch (e) { /* 隐私模式 / file:// 取不到就算了 */ }
+  }
+  function savePrefs() {
+    try {
+      localStorage.setItem(PREF_KEY, JSON.stringify({ K: state.K, eps: state.eps }));
+    } catch (e) { /* 同上 */ }
+  }
+
+  function decodeImage(file) {
+    var url = URL.createObjectURL(file);
+    var im = new Image();
+    im.onload = function () { URL.revokeObjectURL(url); ingest(im, file); };
+    im.onerror = function () {
+      URL.revokeObjectURL(url);
+      setStatus("浏览器解不开这张图，换一个 PNG 试试", true);
+      $("slotMeta").textContent = "解码失败";
+    };
+    im.src = url;
+  }
+
+  function ingest(im, file) {
+    var w = im.naturalWidth, h = im.naturalHeight;
+    if (!w || !h) { setStatus("图片尺寸为 0", true); return; }
+    var scale = 1, note = "";
+    if (Math.max(w, h) > MAX_SIDE * 2) {
+      scale = MAX_SIDE / Math.max(w, h);
+      note = "（已缩放）";
+      w = Math.max(1, Math.round(w * scale));
+      h = Math.max(1, Math.round(h * scale));
+    }
+    var cv = document.createElement("canvas");
+    cv.width = w; cv.height = h;
+    var cx = cv.getContext("2d", { willReadFrequently: true });
+    cx.drawImage(im, 0, 0, w, h);
+    state.img = { w: w, h: h, data: cx.getImageData(0, 0, w, h).data, name: file.name, srcBytes: file.size, scaled: !!scale };
+    // 缩略图
+    var th = $("slotImg");
+    var url = URL.createObjectURL(file);
+    th.src = url; th.hidden = false;
+    if (state.fileURL) URL.revokeObjectURL(state.fileURL);
+    state.fileURL = url;
+    $("slotIc").textContent = "🖼️";
+    $("slotName").textContent = file.name;
+    $("slotMeta").textContent = humanSize(file.size) + " · " + w + "×" + h + note;
+    $("slot").classList.add("filled");
+    render();
+  }
+
+  /* ---------- 主转换 ---------- */
+  function render() {
+    if (!state.img) return;
+    $("empty").hidden = true;
+    $("pvWrap").hidden = false;
+    setStatus("描边中…", false);
+
+    var d = state.img.data, W = state.img.w, H = state.img.h;
+    /* 前景包围盒（先裁透明边，viewBox 恰好贴内容） */
+    var minX = W, minY = H, maxX = -1, maxY = -1, fgCount = 0;
+    for (var y = 0; y < H; y++) for (var x = 0; x < W; x++) {
+      if (d[(y * W + x) * 4 + 3] >= ALPHA_ON) {
+        fgCount++;
+        if (x < minX) minX = x;
+        if (y < minY) minY = y;
+        if (x > maxX) maxX = x;
+        if (y > maxY) maxY = y;
+      }
+    }
+    if (!fgCount) { onError("整张图都是透明的，没有可描边的内容"); return; }
+
+    var TW = maxX - minX + 1, TH = maxY - minY + 1;
+    var fg = new Array(TW * TH);          // [r,g,b] 或 null=透明
+    var list = [];
+    for (var yy = 0; yy < TH; yy++) for (var xx = 0; xx < TW; xx++) {
+      var si = ((yy + minY) * W + (xx + minX)) * 4;
+      if (d[si + 3] >= ALPHA_ON) {
+        var px = [d[si], d[si + 1], d[si + 2]];
+        fg[yy * TW + xx] = px;
+        list.push(px);
+      }
+    }
+
+    var palette = quantize(list, state.K);
+    if (!palette.length) { onError("前景像素太少，量不出颜色层"); return; }
+    /* 最近中心归属 → 每色一层 mask */
+    var layer = new Int16Array(TW * TH).fill(-1);
+    for (var i = 0; i < TW * TH; i++) {
+      var p = fg[i];
+      if (!p) continue;
+      var bk = 0, bd = Infinity;
+      for (var k2 = 0; k2 < palette.length; k2++) {
+        var c = palette[k2];
+        var dd = (c[0] - p[0]) * (c[0] - p[0]) + (c[1] - p[1]) * (c[1] - p[1]) + (c[2] - p[2]) * (c[2] - p[2]);
+        if (dd < bd) { bd = dd; bk = k2; }
+      }
+      layer[i] = bk;
+    }
+
+    var parts = [], loopsTotal = 0, pathCount = 0;
+    if (state.backdrop) {
+      var rx = Math.round(Math.min(TW, TH) * 0.19);
+      parts.push('<rect width="' + TW + '" height="' + TH + '" rx="' + rx + '" fill="' + state.bgColor + '"/>');
+    }
+    var layerColors = 0;
+    for (var ci = 0; ci < palette.length; ci++) {
+      var mask = new Uint8Array(TW * TH);
+      for (var m = 0; m < TW * TH; m++) if (layer[m] === ci) mask[m] = 1;
+      var loops = traceLoops(mask, TW, TH);
+      if (!loops.length) continue;
+      layerColors++;
+      var dd2 = "";
+      for (var li = 0; li < loops.length; li++) {
+        var simp = rdp(loops[li], state.eps);
+        loopsTotal++;
+        dd2 += "M" + simp.map(function (q) { return q[0] + " " + q[1]; }).join("L") + "Z";
+      }
+      var col = palette[ci];
+      parts.push('<path fill="rgb(' + col[0] + "," + col[1] + "," + col[2] + ')" fill-rule="evenodd" d="' + dd2 + '"/>');
+      pathCount++;
+    }
+    if (!pathCount) { onError("没有描出任何轮廓，请把「轮廓简化」调到「关」或加高颜色数试试"); return; }
+
+    var svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + TW + " " + TH + '">' + parts.join("") + "</svg>";
+    state.svg = svg;
+    state.dataURI = "data:image/svg+xml," + encodeURIComponent(svg);
+
+    /* 预览更新 */
+    $("pv16").src = state.dataURI;
+    $("pv32").src = state.dataURI;
+    $("pv64").src = state.dataURI;
+    $("pvSrc").src = state.fileURL;
+    $("tabIcoA").src = state.dataURI;
+    $("tabIcoB").src = state.dataURI;
+    $("linkCode").textContent = prettySvg(svg);
+    var svgBytes = new Blob([svg]).size;
+    $("mColors").textContent = String(layerColors);
+    $("mLoops").textContent = String(loopsTotal);
+    $("mBytes").textContent = humanSize(svgBytes);
+    $("mSrc").textContent = humanSize(state.img.srcBytes);
+    $("metaRow").hidden = false;
+    ["copySvgBtn", "copyLinkBtn", "dlBtn"].forEach(function (id) { $(id).disabled = false; });
+    setStatus("转换完成 · " + layerColors + " 色 / " + loopsTotal + " 段路径 · SVG " + humanSize(svgBytes) +
+      "（源 " + humanSize(state.img.srcBytes) + "）", false);
+  }
+
+  /* 展示用排版：紧凑 SVG 拆行（元素一根线、子路径各占一行）。
+     只影响预览；复制/下载给的仍是原样紧凑源码（体积小才是 favicon 的本分）。 */
+  function prettySvg(s) {
+    return s.replace(/>(?=<)/g, ">\n")
+      .replace(/ d="([^"]*)"/g, function (m, d) {
+        var parts = d.match(/M[^M]*/g) || [d];
+        return ' d="' + parts.join("\n") + '"';
+      });
+  }
+
+  function onError(msg) {    $("pvWrap").hidden = true;
+    $("empty").hidden = false;
+    $("emptyText").innerHTML = "<span style='color:var(--warn)'>" + msg + "</span>";
+    ["copySvgBtn", "copyLinkBtn", "dlBtn"].forEach(function (id) { $(id).disabled = true; });
+    setStatus(msg, true);
+  }
+
+  /* ---------- 文件入口：打开按钮 / 拖入（同一 loadFile） ---------- */
+  function loadFile(f) {
+    if (!f) return;
+    setStatus("读取图片…", false);
+    decodeImage(f);
+  }
+  $("openBtn").addEventListener("click", function () { $("filePick").click(); });
+  $("slot").addEventListener("click", function () { $("filePick").click(); });
+  $("filePick").addEventListener("change", function () {
+    loadFile(this.files[0]);
+    this.value = "";   /* 清掉选择，下次还能再选同一个文件 */
+    this.blur();
+  });
+
+  var hasFiles = function (e) {
+    var t = e.dataTransfer && e.dataTransfer.types, i;
+    if (!t) return false;
+    for (i = 0; i < t.length; i++) if (t[i] === "Files") return true;
+    return false;
+  };
+  var slot = $("slot");
+  ["dragenter", "dragover"].forEach(function (ev) {
+    document.addEventListener(ev, function (e) {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      slot.classList.add("dragover");
+      $("openBtn").classList.add("flash");
+    });
+  });
+  document.addEventListener("dragleave", function (e) {
+    if (!e.relatedTarget) { slot.classList.remove("dragover"); $("openBtn").classList.remove("flash"); }
+  });
+  document.addEventListener("drop", function (e) {
+    slot.classList.remove("dragover");
+    $("openBtn").classList.remove("flash");
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    var f = e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f) loadFile(f);
+  });
+  window.addEventListener("blur", function () { slot.classList.remove("dragover"); $("openBtn").classList.remove("flash"); });
+
+  /* ---------- 控件 ---------- */
+  var K_BTNS = [2, 3, 4, 6, 10];
+  function syncUI() {
+    var seg = $("colorSeg").children;
+    for (var i = 0; i < seg.length; i++) seg[i].classList.toggle("on", K_BTNS[i] === state.K);
+    var sg = $("simplSeg").children;
+    sg[0].classList.toggle("on", state.eps === 0);
+    sg[1].classList.toggle("on", state.eps === 0.75);
+    sg[2].classList.toggle("on", state.eps === 1.5);
+    var bg = $("backSeg").children;
+    bg[0].classList.toggle("on", !state.backdrop);
+    bg[1].classList.toggle("on", state.backdrop);
+    $("bgRow").hidden = !state.backdrop;
+  }
+  $("colorSeg").addEventListener("click", function (e) {
+    var k = e.target && e.target.getAttribute && e.target.getAttribute("data-k");
+    if (!k) return;
+    state.K = +k; savePrefs(); syncUI(); render();
+  });
+  $("simplSeg").addEventListener("click", function (e) {
+    var v = e.target && e.target.getAttribute && e.target.getAttribute("data-e");
+    if (v === null || v === undefined) return;
+    state.eps = +v; savePrefs(); syncUI(); render();
+  });
+  $("backSeg").addEventListener("click", function (e) {
+    var v = e.target && e.target.getAttribute && e.target.getAttribute("data-b");
+    if (v === null) return;
+    state.backdrop = v === "1"; syncUI(); render();
+  });
+  $("bgColor").addEventListener("input", function () {
+    state.bgColor = this.value;
+    if (state.backdrop) render();
+  });
+
+  /* ---------- 复制 / 下载 ---------- */
+  function legacyCopy(t) {
+    var el = document.createElement("textarea"), ok = false;
+    el.value = t;
+    el.setAttribute("readonly", "");
+    el.style.cssText = "position:fixed;top:0;left:-9999px;opacity:0";
+    document.body.appendChild(el);
+    el.select();
+    try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+    document.body.removeChild(el);
+    return ok;
+  }
+  function copyText(t) {
+    if (navigator.clipboard && navigator.clipboard.writeText && window.isSecureContext) {
+      return navigator.clipboard.writeText(t).then(function () { return true; }, function () { return legacyCopy(t); });
+    }
+    return Promise.resolve(legacyCopy(t));
+  }
+  function flashBtn(btn) {
+    var old = btn.textContent;
+    btn.textContent = "已复制 ✓";
+    setTimeout(function () { btn.textContent = old; }, 1400);
+  }
+  $("copySvgBtn").addEventListener("click", function () {
+    if (!state.svg) return;
+    var btn = this;
+    copyText(state.svg).then(function (ok) {
+      if (ok) { flashBtn(btn); setStatus("已复制 SVG 源码", false); }
+      else setStatus("浏览器拒绝写入剪贴板，请在预览里手动复制", true);
+    });
+  });
+  $("copyLinkBtn").addEventListener("click", function () {
+    if (!state.dataURI) return;
+    var btn = this;
+    copyText('<link rel="icon" href="' + state.dataURI + '">').then(function (ok) {
+      if (ok) { flashBtn(btn); setStatus("已复制 <link> 标签，粘到页面 <head> 即可", false); }
+      else setStatus("浏览器拒绝写入剪贴板，请在下方代码块手动复制", true);
+    });
+  });
+  $("dlBtn").addEventListener("click", function () {
+    if (!state.svg) return;
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([state.svg], { type: "image/svg+xml" }));
+    a.download = "favicon.svg";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 2000);
+  });
+
+  /* ---------- 启动 ---------- */
+  loadPrefs();
+  syncUI();
+})();
+</script>
+</body>
+</html>
