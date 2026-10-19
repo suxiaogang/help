@@ -205,6 +205,10 @@
       font-size: 11px;
       color: var(--text);
     }
+    /* 玻璃质感参数行 */
+    .gl-params { margin-top: 8px; }
+    .gl-row + .gl-row { margin-top: 5px; }
+    .gl-name { flex: 0 0 64px; font-size: 11px; color: var(--muted); white-space: nowrap; }
     /* 分段按钮组（玻璃质感等档位选择） */
     .seg {
       display: grid;
@@ -492,13 +496,20 @@
 
           <!-- 玻璃质感 -->
           <div class="group">
-            <div class="group-title"><span>玻璃质感</span></div>
+            <div class="group-title">
+              <span>玻璃质感</span>
+              <span class="tools">
+                <button type="button" class="mini" id="glassReset" style="display:none"
+                        title="把当前档位的所有参数恢复成默认值">恢复默认</button>
+              </span>
+            </div>
             <div class="seg" id="glassSeg">
               <button type="button" data-glass="0" class="on">关闭</button>
               <button type="button" data-glass="1">柔和</button>
               <button type="button" data-glass="2">明显</button>
             </div>
             <div class="hint-line" id="glassHint"></div>
+            <div class="gl-params" id="glassParams" hidden></div>
           </div>
 
           <!-- 包含尺寸 -->
@@ -789,48 +800,26 @@
   /* =========================================================
      Liquid Glass 风格玻璃质感
      ------------------------------------------------------------
-     参考 Apple Liquid Glass（WWDC 2025，macOS Tahoe / iOS 26）：
-     半透明 + 真实高斯模糊 + 左上角高光 + 倒角边缘 + 轻微色散。
-     静态 icns 无法做实时折射，这里把光学特征烘焙进 PNG。
+     Liquid Glass 的辨识度来自「边缘」，而不是整块面板：
+       1) 折射：靠近轮廓的一圈，内容像被厚玻璃的倒角弯折、拉伸；
+       2) 高光边线：一条很细的镜面反光，亮度取决于「位置」而不是边的朝向：
+          左上角最亮、右下角次之、右上与左下只剩底光，
+          因此每条边内部都是渐变——顺时针看，上边 强→弱、右边 弱→强、
+          下边 强→弱、左边 弱→强；
+       3) 边框与内发光：贴着轮廓一圈较宽的半透明亮边（外缘最亮、向内淡出），
+          再加更宽的渐隐柔光，颜色取自底图提亮而不是纯白；
+       4) 浅色底图上白光不可见，改为叠一层同形态的内阴影来勾出轮廓。
+     以上全部限制在「边缘带」内，带外像素与关闭玻璃时逐像素一致，
+     所以不会改变图片本身的颜色；也不做色散，避免彩边。
+     静态 icns 无法做实时折射，这里把光学特征逐像素烘焙进 PNG。
      ========================================================= */
-  /* 玻璃质感参数。
-     核心约束（连续几轮真实图标反馈换来的）：
-     「边框要看得见」和「不能改变图片颜色」本质冲突——
-     浅色图标上画白边等于没画，而铺一层黑色半透明又会把白色压暗。
-     因此这里的原则是：
-       1) 绝不做铺满面板的加色/减色，那是最容易被察觉的「改色」；
-       2) 边框颜色随底图明暗自适应（见 adaptRim）；
-       3) 边框只画在轮廓内侧的窄窄一圈，尽量远离图像主体；
-       4) 不做色散——它会在彩色边缘留下假彩边，等同于改色。 */
   var GLASS = [
     null,
-    { glowW: 0.012, glowBlur: 0.045, glTop: 0.38, glBot: 0.20, shTop: 0.24, shBot: 0.13 },
-    { glowW: 0.018, glowBlur: 0.080, glTop: 0.62, glBot: 0.34, shTop: 0.40, shBot: 0.21 }
+    // band 边缘带宽 · refr 折射位移峰值 · rim 高光线粗（均为内容框边长的比例）
+    // bdW 边框宽度 · rimA 高光线 / bdA 边框 / glowA 内发光 / bloomA 对角处的宽柔光 / shadeA 内阴影 的最大不透明度
+    { band: 0.060, refr: 0.020, rim: 0.0035, fl: 0.18, rimA: 0.70, bdW: 0.016, bdA: 0.24, glowA: 0.13, bloomA: 0.08, shadeA: 0.20 },
+    { band: 0.088, refr: 0.034, rim: 0.0050, fl: 0.18, rimA: 0.95, bdW: 0.024, bdA: 0.36, glowA: 0.22, bloomA: 0.15, shadeA: 0.34 }
   ];
-
-  // 采样内容框的平均亮度，判断该用亮边还是暗边
-  function plateLuma(pc, box) {
-    var step = Math.max(1, Math.round(box / 24));
-    var d = pc.getImageData(0, 0, box, box).data;
-    var sum = 0, n = 0;
-    for (var y = 0; y < box; y += step) {
-      for (var x = 0; x < box; x += step) {
-        var i = (y * box + x) * 4;
-        if (d[i + 3] < 128) continue;
-        sum += 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
-        n++;
-      }
-    }
-    return n ? sum / n / 255 : 0.5;
-  }
-
-  var SUPPORTS_FILTER = (function () {
-    try {
-      var c = document.createElement("canvas").getContext("2d");
-      c.filter = "blur(2px)";
-      return c.filter === "blur(2px)";
-    } catch (e) { return false; }
-  })();
 
   function mkCanvas(w, h) {
     var c = document.createElement("canvas");
@@ -839,89 +828,201 @@
     return c;
   }
 
-  
+  // 到轮廓的内向距离与外法线。(u, v) ∈ [-1, 1]，形状内接于单位方框。
+  // 结果写进这三个变量，避免逐像素分配对象。
+  var E_D = 0, E_NX = 0, E_NY = 0;
+  function edgeAt(u, v) {
+    var au = u < 0 ? -u : u, av = v < 0 ? -v : v;
+    var su = u < 0 ? -1 : 1, sv = v < 0 ? -1 : 1;
+    if (shape === "circle") {
+      var r = Math.sqrt(u * u + v * v) || 1e-6;
+      E_D = 1 - r; E_NX = u / r; E_NY = v / r;
+    } else if (shape === "round") {
+      var k = 0.4;                       // 半径 = 边长 20% = 半边长 40%
+      var qx = au - (1 - k), qy = av - (1 - k);
+      if (qx > 0 && qy > 0) {
+        var l = Math.sqrt(qx * qx + qy * qy) || 1e-6;
+        E_D = k - l; E_NX = su * qx / l; E_NY = sv * qy / l;
+      } else if (qx > qy) {
+        E_D = 1 - au; E_NX = su; E_NY = 0;
+      } else {
+        E_D = 1 - av; E_NX = 0; E_NY = sv;
+      }
+    } else {                             // 超椭圆 n=5：|u|^5+|v|^5=1
+      var u4 = au * au * au * au, v4 = av * av * av * av;
+      var F = u4 * au + v4 * av;
+      if (F < 1e-9) { E_D = 1; E_NX = 0; E_NY = -1; return; }
+      var f = Math.pow(F, 0.2);          // 一次齐次的「半径」，边界处 f=1
+      var s = f / F;
+      var gx = s * u4 * su, gy = s * v4 * sv;
+      var gl = Math.sqrt(gx * gx + gy * gy) || 1e-6;
+      E_D = (1 - f) / gl; E_NX = gx / gl; E_NY = gy / gl;
+    }
+  }
 
   function renderGlass(ctx, box, pad) {
-    var P = GLASS[glass];
-    var blurPx = Math.max(0, box * P.blur);
-    var bleed = Math.ceil(blurPx * 3) + 2;   // 向外多画一圈，避免模糊在边缘吸入透明
-    var S = Math.max(1, Math.round(box + bleed * 2));
+    var size = ctx.canvas.width;
 
-    // --- 1) 底图：清晰版为主，模糊只做一点点 ---
-    var big = mkCanvas(S, S);
-    var bc = big.getContext("2d");
-    drawSource(bc, bleed, box);
+    // --- 1) 先按普通流程画出完整底图（底色 + 原图），暂不裁切 ---
+    var comp = mkCanvas(size, size);
+    var cc = comp.getContext("2d");
+    cc.imageSmoothingEnabled = true;
+    cc.imageSmoothingQuality = "high";
+    drawBackground(cc, size);
+    drawSource(cc, pad, box);
 
-    var plate = mkCanvas(box, box);
-    var pc = plate.getContext("2d");
-
-    if (blurPx > 0) {
-      if (SUPPORTS_FILTER) {
-        // 只做 blur，不叠 saturate / brightness——那两项会直接改动颜色
-        var oc = big.getContext("2d");
-        oc.filter = "blur(" + blurPx + "px)";
-        oc.drawImage(big, 0, 0);
-        oc.filter = "none";
-        pc.drawImage(big, bleed, bleed, box, box, 0, 0, box, box);
-      } else {
-        // 兜底：无 ctx.filter 时用「缩小再放大」得到廉价模糊
-        var small = box > 24 ? Math.max(2, Math.round(box / 12)) : Math.max(1, Math.round(box / 4));
-        var tmp = mkCanvas(small, small);
-        var tc = tmp.getContext("2d");
-        tc.imageSmoothingEnabled = true;
-        tc.imageSmoothingQuality = "high";
-        tc.drawImage(big, 0, 0, S, S, 0, 0, small, small);
-        pc.imageSmoothingEnabled = true;
-        pc.imageSmoothingQuality = "high";
-        pc.drawImage(tmp, 0, 0, small, small, 0, 0, box, box);
-      }
-      // 不用径向遮罩：模糊一旦在轮廓边缘达到峰值，图标就会虚焦、
-      // 倒角边框也随之消失。宁可整体均匀地糊一点点。
-    } else {
-      drawSource(pc, 0, box);
-    }
-
-    // 已去掉色散与镜面高光：红蓝通道偏移会在彩色轮廓旁留下假彩边，
-    // 面板铺白光会冲淡浅色图——两者都等同于「改变图片颜色」。
-
-    // --- 2) 贴到主画布并按形状裁切 ---
-    ctx.save();
-    if (shape !== "none") { shapePath(ctx, pad, pad, box); ctx.clip(); }
-    drawBackground(ctx, pad + box * 2);
-    ctx.drawImage(plate, pad, pad);
-    ctx.restore();
-
-    // --- 3) 内边线发光 ---
-    // 实测本机 8 个 Liquid Glass 系统图标：轮廓内侧一圈都是「亮于外侧」的
-    // 发光带（内侧≈246 / 外侧≈61），上下边缘皆然，并不存在右下的暗边。
-    // 所以这里画的是整圈柔光，而不是硬描边：
-    //   · lineWidth 很细，只是一条芯
-    //   · shadowBlur 向内扩散出柔和辉光（裁到形状内，只保留向内的一半）
-    //   · 受光侧强、背光侧弱，但背光侧仍是同一色相，不会变成灰边
-    // 浅色图上亮光不可见，改用同样形态的「内阴影」代替。
+    // 原样形状没有轮廓，边缘效果无从谈起；读不到像素时同样退回普通输出
+    var src = null;
     if (shape !== "none") {
-      var lum = plateLuma(pc, box);
-      var light = lum >= 0.5;
-      var base = light ? "0,0,0" : "255,255,255";
-      var aTop = light ? P.shTop : P.glTop;
-      var aBot = light ? P.shBot : P.glBot;
-      var aMid = (aTop + aBot) / 2;
-
-      ctx.save();
-      shapePath(ctx, pad, pad, box);
-      ctx.clip();                       // 只保留向内的辉光，轮廓本身不被撑大
-      ctx.lineWidth = Math.max(1, box * P.glowW);
-      ctx.lineJoin = "round";
-      var gGlow = ctx.createLinearGradient(pad, pad, pad + box, pad + box);
-      gGlow.addColorStop(0.00, "rgba(" + base + "," + aTop + ")");   // 受光侧
-      gGlow.addColorStop(0.50, "rgba(" + base + "," + aMid.toFixed(3) + ")");
-      gGlow.addColorStop(1.00, "rgba(" + base + "," + aBot + ")");   // 背光侧，仍是同一色
-      ctx.strokeStyle = gGlow;
-      ctx.shadowColor = "rgba(" + base + "," + Math.max(aTop, aBot) + ")";
-      ctx.shadowBlur = box * P.glowBlur;
-      ctx.stroke();
-      ctx.restore();
+      try { src = cc.getImageData(pad, pad, box, box); } catch (e) { src = null; }
     }
+    if (!src) {
+      ctx.save();
+      if (shape !== "none") { shapePath(ctx, pad, pad, box); ctx.clip(); }
+      ctx.drawImage(comp, 0, 0);
+      ctx.restore();
+      return;
+    }
+
+    var P = GLASS[glass];
+    var c = box / 2;
+    var lw = Math.max(1, box * P.rim);                 // 高光线粗
+    var rimC = lw * 0.9, rimS = Math.max(0.6, lw * 0.55);
+    var bdW = Math.max(1.5, box * P.bdW);              // 边框宽度
+    var A = box * P.refr;                              // 折射位移峰值（px）
+    // 位移不超过带宽的 0.42，否则映射会折叠；所以把折射拉高时，带宽会自动跟着变宽
+    var W = Math.max(box * P.band, lw * 4, bdW * 1.4, A / 0.42, 3);   // 边缘带宽（px）
+    var Wg = W * 0.65, Ws = W * 0.55;
+    var innerR = Math.max(0, 1 - W / c), innerR2 = innerR * innerR;
+    var sd = src.data;
+    var out = cc.createImageData(box, box);
+    var od = out.data;
+    od.set(sd);
+
+    // --- 2) 边缘带平均亮度：暗/彩色底以亮边为主，浅色底补内阴影 ---
+    var step = Math.max(1, Math.floor(box / 64)), lsum = 0, lcnt = 0, x, y, u, v, i;
+    for (y = 0; y < box; y += step) {
+      v = (y + 0.5 - c) / c;
+      for (x = 0; x < box; x += step) {
+        u = (x + 0.5 - c) / c;
+        if (u * u + v * v < innerR2) continue;
+        edgeAt(u, v);
+        var dd = E_D * c;
+        if (dd < 0 || dd > W) continue;
+        i = (y * box + x) * 4;
+        if (sd[i + 3] < 128) continue;
+        lsum += 0.299 * sd[i] + 0.587 * sd[i + 1] + 0.114 * sd[i + 2];
+        lcnt++;
+      }
+    }
+    var lum = lcnt ? lsum / lcnt / 255 : 0.3;
+    var hiK = Math.min(1, Math.max(0, (0.86 - lum) / 0.30));
+    var shK = Math.min(1, Math.max(0, (lum - 0.50) / 0.30));
+    var rimK = 0.40 + 0.60 * hiK, glowK = 0.20 + 0.80 * hiK, bdK = 0.35 + 0.65 * hiK;
+
+    // --- 3) 逐像素处理边缘带：折射 → 内阴影 → 内发光 → 高光边线 ---
+    var lastX = box - 1;
+    for (y = 0; y < box; y++) {
+      v = (y + 0.5 - c) / c;
+      for (x = 0; x < box; x++) {
+        u = (x + 0.5 - c) / c;
+        if (u * u + v * v < innerR2) continue;       // 带外：保持原样
+        edgeAt(u, v);
+        var d = E_D * c;
+        if (d >= W || d < -1) continue;
+        var dc = d < 0 ? 0 : d;
+        var nx = E_NX, ny = E_NY;
+
+        // 受光程度：只看像素相对中心的方位角，而不是边的法线朝向。
+        // 用法线的话，一条直边上处处相同；用方位角，同一条边从一端走到另一端就会渐变。
+        //   左上 1.0 · 右下 ≈0.8 · 各边中点 ≈0.5 · 右上/左下 ≈0.18
+        var pl = Math.sqrt(u * u + v * v) || 1e-6;
+        var du = u / pl, dv = v / pl;
+        var gg = (du - dv) * 0.7071;                 // 左上/右下对角线上为 0，右上 +1，左下 −1
+        var hh = (du + dv) * 0.7071;                 // 左上 −1 … 右下 +1
+        var lobe = 1 - gg * gg;
+        lobe *= Math.sqrt(Math.sqrt(lobe));          // ^1.25：让两个弱角更弱
+        lobe *= 0.89 - 0.11 * hh;                    // 右下比左上弱一档
+        lobe = P.fl + (1 - P.fl) * lobe;
+
+        // 折射：边缘像素取自更靠内的位置，位移向内平滑衰减到 0（带界处无接缝）；
+        // 受光处位移略大，让对角处的弯折感更明显
+        var q = 1 - dc / W;
+        var sh = A * q * q * (0.7 + 0.3 * lobe);
+        var fx = x - nx * sh, fy = y - ny * sh;
+        var x0 = Math.floor(fx), y0 = Math.floor(fy);
+        var wx = fx - x0, wy = fy - y0;
+        var x1 = x0 + 1, y1 = y0 + 1;
+        x0 = x0 < 0 ? 0 : (x0 > lastX ? lastX : x0);
+        x1 = x1 < 0 ? 0 : (x1 > lastX ? lastX : x1);
+        y0 = y0 < 0 ? 0 : (y0 > lastX ? lastX : y0);
+        y1 = y1 < 0 ? 0 : (y1 > lastX ? lastX : y1);
+        var i00 = (y0 * box + x0) * 4, i10 = (y0 * box + x1) * 4;
+        var i01 = (y1 * box + x0) * 4, i11 = (y1 * box + x1) * 4;
+        var a00 = sd[i00 + 3] * (1 - wx) * (1 - wy), a10 = sd[i10 + 3] * wx * (1 - wy);
+        var a01 = sd[i01 + 3] * (1 - wx) * wy,       a11 = sd[i11 + 3] * wx * wy;
+        var aSum = a00 + a10 + a01 + a11;            // 按 alpha 加权，透明像素不会把颜色拖黑
+        var r = 0, g = 0, b = 0;
+        if (aSum > 0) {
+          r = (sd[i00] * a00 + sd[i10] * a10 + sd[i01] * a01 + sd[i11] * a11) / aSum;
+          g = (sd[i00 + 1] * a00 + sd[i10 + 1] * a10 + sd[i01 + 1] * a01 + sd[i11 + 1] * a11) / aSum;
+          b = (sd[i00 + 2] * a00 + sd[i10 + 2] * a10 + sd[i01 + 2] * a01 + sd[i11 + 2] * a11) / aSum;
+        }
+        var a = aSum / 255;
+
+        var aShade = 0, aGlow = 0, aRim = 0;
+        if (shK > 0 && dc < Ws) {
+          var sq = 1 - dc / Ws;
+          aShade = P.shadeA * shK * sq * sq * (0.55 + 0.45 * (1 - lobe));
+        }
+        if (dc < Wg) {
+          var gq = 1 - dc / Wg, bq = 1 - dc / W;
+          // 窄的贴边内发光 + 宽的对角柔光（后者只在左上、右下明显）
+          aGlow = glowK * (P.glowA * (0.15 + 0.85 * lobe) * gq * gq * gq
+                         + P.bloomA * lobe * lobe * bq * bq);
+          if (aGlow > 0.95) aGlow = 0.95;
+        }
+        if (dc < bdW) {
+          // 边框：贴边一段近乎平台，再向内平滑淡出；四个角都可见，只是强弱不同
+          var bt = dc / bdW, bs = bt < 0.35 ? 0 : (bt - 0.35) / 0.65;
+          var aBd = P.bdA * bdK * (0.5 + 0.5 * lobe) * (1 - bs * bs * (3 - 2 * bs));
+          aGlow = aGlow + aBd * (1 - aGlow);
+        }
+        var rt = (dc - rimC) / rimS;
+        if (rt > -3 && rt < 3) aRim = P.rimA * rimK * lobe * Math.exp(-rt * rt);
+
+        var na, m1, m2;
+        if (aShade > 0) {                            // 黑色盖上去
+          na = aShade + a * (1 - aShade);
+          m2 = a * (1 - aShade) / na;
+          r *= m2; g *= m2; b *= m2; a = na;
+        }
+        if (aGlow > 0) {                             // 发光色 = 底图色向白色提亮，保留色相
+          var t = 0.45 * a;
+          var gr = 255 + (r - 255) * t, gg = 255 + (g - 255) * t, gb = 255 + (b - 255) * t;
+          na = aGlow + a * (1 - aGlow);
+          m1 = aGlow / na; m2 = a * (1 - aGlow) / na;
+          r = gr * m1 + r * m2; g = gg * m1 + g * m2; b = gb * m1 + b * m2; a = na;
+        }
+        if (aRim > 0) {                              // 白色高光线
+          na = aRim + a * (1 - aRim);
+          m1 = aRim / na; m2 = a * (1 - aRim) / na;
+          r = 255 * m1 + r * m2; g = 255 * m1 + g * m2; b = 255 * m1 + b * m2; a = na;
+        }
+
+        var o = (y * box + x) * 4;
+        od[o] = r; od[o + 1] = g; od[o + 2] = b; od[o + 3] = a * 255;
+      }
+    }
+
+    // --- 4) 贴到主画布并按形状裁切 ---
+    var tmp = mkCanvas(box, box);
+    tmp.getContext("2d").putImageData(out, 0, 0);
+    ctx.save();
+    shapePath(ctx, pad, pad, box);
+    ctx.clip();
+    ctx.drawImage(tmp, pad, pad);
+    ctx.restore();
   }
 
   function canvasToPngBytes(cv) {
@@ -1212,13 +1313,13 @@
   function syncGlassHint() {
     if (glass === 0) {
       glassHint.className = "hint-line";
-      glassHint.innerHTML = "沿轮廓内侧加一圈<b>发光边线</b>，模拟 macOS Tahoe 的 <b>Liquid Glass</b>。不做模糊、不铺色，<b>画面完全不变</b>。";
+      glassHint.innerHTML = "给轮廓边缘加上<b>折射、高光边线与内发光</b>，模拟 macOS Tahoe 的 <b>Liquid Glass</b>。只作用于边缘一圈，<b>中间画面不变</b>。";
       return;
     }
     var soft = glass === 1;
     glassHint.className = "hint-line";
     glassHint.innerHTML = (soft ? "<b>柔和</b>：" : "<b>明显</b>：")
-      + "沿轮廓内侧加一圈<b>发光边线</b>，<b>画面完全不变</b>。"
+      + "边缘<b>折射</b>、<b>高光边线</b>与<b>内发光</b>，<b>中间画面不变</b>。"
       + (shape === "none" ? " 原样形状下不明显，建议选圆角。" : "");
   }
 
@@ -1227,8 +1328,71 @@
       glass = parseInt(b.dataset.glass, 10) || 0;
       [].forEach.call(glassSeg.children, function (o) { o.classList.toggle("on", o === b); });
       syncGlassHint();
+      syncGlassParams();
       scheduleRender();
     });
+  });
+
+  /* =========================================================
+     玻璃质感参数滑块
+     滑块直接改当前档位（柔和 / 明显）的参数，各档位的修改互不影响；
+     「恢复默认」只重置当前档位。预览与导出用的是同一份参数。
+     ========================================================= */
+  var GLASS_DEF = [null, JSON.parse(JSON.stringify(GLASS[1])), JSON.parse(JSON.stringify(GLASS[2]))];
+  var glassParams = document.getElementById("glassParams");
+  var glassReset  = document.getElementById("glassReset");
+
+  // 数值统一按百分比显示和输入；k 为 GLASS 里的字段，范围按「再大/再小就失真」来定
+  var GLASS_UI = [
+    { k: "bdW",    name: "边框宽度",   min: 0.4, max: 4.0,  step: 0.1,  d: 1 },  // 占内容宽度
+    { k: "bdA",    name: "边框亮度",   min: 0,   max: 80,   step: 1,    d: 0 },
+    { k: "rim",    name: "高光线粗细", min: 0.1, max: 1.0,  step: 0.05, d: 2 },  // 占内容宽度
+    { k: "rimA",   name: "高光线亮度", min: 0,   max: 100,  step: 1,    d: 0 },
+    { k: "glowA",  name: "内发光",     min: 0,   max: 60,   step: 1,    d: 0 },
+    { k: "bloomA", name: "对角柔光",   min: 0,   max: 50,   step: 1,    d: 0 },
+    { k: "refr",   name: "折射强度",   min: 0,   max: 5.0,  step: 0.1,  d: 1 },  // 边缘内容的位移量
+    { k: "fl",     name: "弱角底光",   min: 5,   max: 60,   step: 1,    d: 0 },  // 右上/左下的相对亮度
+    { k: "shadeA", name: "浅底内阴影", min: 0,   max: 60,   step: 1,    d: 0 }   // 仅浅色底图时生效
+  ];
+  var glassRows = {};
+
+  GLASS_UI.forEach(function (it) {
+    var row  = document.createElement("div");
+    row.className = "slider-row gl-row";
+    var name = document.createElement("span");
+    name.className = "gl-name";
+    name.textContent = it.name;
+    var inp  = document.createElement("input");
+    inp.type = "range"; inp.min = it.min; inp.max = it.max; inp.step = it.step;
+    var val  = document.createElement("span");
+    val.className = "slider-val";
+    inp.addEventListener("input", function () {
+      if (!glass) return;
+      GLASS[glass][it.k] = parseFloat(inp.value) / 100;
+      val.textContent = parseFloat(inp.value).toFixed(it.d) + "%";
+      scheduleRender();
+    });
+    row.appendChild(name); row.appendChild(inp); row.appendChild(val);
+    glassParams.appendChild(row);
+    glassRows[it.k] = { inp: inp, val: val, it: it };
+  });
+
+  function syncGlassParams() {
+    glassParams.hidden = glass === 0;
+    glassReset.style.display = glass === 0 ? "none" : "";
+    if (!glass) return;
+    GLASS_UI.forEach(function (it) {
+      var r = glassRows[it.k], v = GLASS[glass][it.k] * 100;
+      r.inp.value = v;
+      r.val.textContent = parseFloat(r.inp.value).toFixed(it.d) + "%";
+    });
+  }
+
+  glassReset.addEventListener("click", function () {
+    if (!glass) return;
+    GLASS[glass] = JSON.parse(JSON.stringify(GLASS_DEF[glass]));
+    syncGlassParams();
+    scheduleRender();
   });
 
   /* =========================================================
@@ -1453,6 +1617,7 @@
   syncPadHint();
   syncBgHint();
   syncGlassHint();
+  syncGlassParams();
 })();
 </script>
 </body>
