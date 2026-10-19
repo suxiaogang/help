@@ -1,0 +1,846 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ICNS 拆包 → PNG / WebP</title>
+  <meta name="description" content="把 .icns 反向拆包成 PNG 或 WebP 图标：PNG 负载原样导出不重编码，旧式 RLE 与原始 ARGB 块在浏览器内解码，透明通道保留，纯前端不上传" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23171c24'/%3E%3Ctext x='16' y='23' font-size='18' font-weight='bold' font-family='ui-monospace,Menlo,monospace' fill='%233dd68c' text-anchor='middle'%3E%3E_%3C/text%3E%3C/svg%3E" />
+  <style>
+    /* 与各工具子页面共用同一套色板，改这里即可整体换肤 */
+    :root {
+      --bg: #0e1116;
+      --panel: #171c24;
+      --panel-2: #1e2632;
+      --border: #2a3340;
+      --text: #e8edf4;
+      --muted: #8b97a8;
+      --accent: #3dd68c;
+      --accent-2: #2bb673;
+      --warn: #ffb340;
+      --radius: 10px;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+              "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; }
+    /* 多处用 hidden 切换显隐，而这些元素又自带 display 规则，
+       不加这一条的话 hidden 会被作者样式盖掉，看上去「没反应」 */
+    [hidden] { display: none !important; }
+
+    body {
+      background: var(--bg); color: var(--text);
+      font-family: var(--sans); font-size: 13px;
+      display: flex; flex-direction: column; overflow: hidden;
+    }
+
+    header {
+      flex: 0 0 auto; padding: 11px 22px;
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    }
+    header h1 { font-size: 16px; margin: 0; font-weight: 600; letter-spacing: .3px; }
+    header .hint { font-size: 12px; color: var(--muted); }
+    header .spacer { flex: 1 1 auto; }
+    header .open {
+      font: inherit; font-size: 12px; color: var(--text);
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: 7px; padding: 5px 12px; cursor: pointer;
+      transition: background .15s, border-color .15s, color .15s;
+    }
+    header .open:hover, header .open.flash { border-color: var(--accent); color: var(--accent); }
+
+    .layout {
+      flex: 1 1 auto;
+      display: grid;
+      /* 左栏放宽：清单行的「类型 + 来源说明 + 字节」一排摆得下，不再折行 */
+      grid-template-columns: minmax(430px, 480px) minmax(0, 1fr);
+      grid-template-rows: minmax(0, 1fr);
+      min-height: 0;
+    }
+    .column { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+    .column.left { border-right: 1px solid var(--border); }
+
+    .col-head {
+      flex: 0 0 auto; padding: 9px 16px; min-height: 41px;
+      /* 左右两栏只有一栏带动作按钮时也保持等高：
+         mini 按钮（line-height:1 后高 21px）+ 上下 9px 内距 + 1px 边 = 41 */
+      font-size: 12px; font-weight: 600; color: var(--muted); letter-spacing: .5px;
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 10px; border-bottom: 1px solid var(--border);
+    }
+    .col-head .actions { display: flex; gap: 6px; align-items: center; }
+    .col-head .mini { line-height: 1; }   /* 锁死按钮盒高，跨平台字体行高不一也不破等高 */
+
+    button {
+      font: inherit; font-size: 12px; padding: 6px 12px;
+      border-radius: 7px; border: 1px solid var(--border);
+      background: var(--panel-2); color: var(--text);
+      cursor: pointer; white-space: nowrap;
+      transition: background .15s, border-color .15s, opacity .15s;
+    }
+    button:hover:not(:disabled) { background: #232c39; border-color: #3a4557; }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+    button.primary { background: var(--accent); border-color: var(--accent); color: #062315; font-weight: 600; }
+    button.primary:hover:not(:disabled) { background: var(--accent-2); border-color: var(--accent-2); }
+    button.mini { padding: 4px 9px; font-size: 11px; }
+
+    .scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; }
+
+    .panel { padding: 16px 18px 12px; }
+    .group + .group { margin-top: 18px; }
+    .group-title {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 8px; font-size: 11.5px; font-weight: 600; color: var(--muted);
+      letter-spacing: .4px; margin-bottom: 9px;
+    }
+    .group-title small { color: var(--muted); font-weight: 400; margin-left: 5px; }
+
+    .seg { display: grid; gap: 8px; }
+    .seg.c3 { grid-template-columns: repeat(3, 1fr); }
+    .seg button { padding: 8px 2px; font-size: 12px; }
+    .seg button.on { background: var(--accent); border-color: var(--accent); color: #062315; font-weight: 600; }
+
+    .hint-line { margin-top: 7px; font-size: 11px; line-height: 1.5; color: var(--muted); }
+    .hint-line b { color: var(--text); font-weight: 600; }
+    .hint-line code { font-family: var(--mono); color: var(--text); }
+    .hint-line.warn { color: var(--warn); }
+    .hint-line + .hint-line { margin-top: 4px; }
+
+    /* 文件槽：虚线圆角 / 拖入或点击，加载后显示文件信息 */
+    .slot {
+      border: 1px dashed var(--border); border-radius: var(--radius);
+      padding: 13px 15px; cursor: pointer;
+      display: flex; align-items: center; gap: 10px;
+      margin-bottom: 18px;          /* 与下方首块 .group 拉开间距，节奏对齐组距 */
+      transition: border-color .2s, background-color .2s;
+    }
+    .slot:hover, .slot.dragover { border-color: var(--accent); background: rgba(61, 214, 140, .05); }
+    .slot.filled { border-style: solid; background: var(--panel); }
+    .slot .ic { flex: 0 0 auto; font-size: 18px; opacity: .8; }
+    .slot .t { flex: 1 1 auto; min-width: 0; }
+    .slot .t .n { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .slot .t .s { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+    /* 左栏尺寸清单行 */
+    .trow {
+      display: flex; align-items: center; gap: 9px;
+      padding: 7px 10px; margin-top: 6px;
+      border: 1px solid var(--border); border-radius: 8px;
+      background: var(--panel); cursor: pointer;
+    }
+    .trow:hover { border-color: #3a4557; }
+    .trow.dead { opacity: .6; background: var(--bg); border-style: dashed; }
+    .trow input[type="checkbox"] {
+      flex: 0 0 auto; width: 15px; height: 15px;
+      accent-color: var(--accent); cursor: pointer;
+    }
+    .trow .px { flex: 0 0 auto; font-family: var(--mono); font-size: 12px; font-weight: 600; }
+    .trow .chips { flex: 1 1 auto; min-width: 0; font-size: 10.5px; color: var(--muted); }
+    .trow .chips .ct { display: inline-block; padding: 1px 5px; margin-right: 4px;
+      border: 1px solid var(--border); border-radius: 5px; font-family: var(--mono); }
+    .trow .chips .src { color: var(--muted); }
+    .trow .bytes { flex: 0 0 auto; font-family: var(--mono); font-size: 10.5px; color: var(--muted); }
+
+    /* ---- 右栏 ---- */
+    .view {
+      flex: 1 1 auto; min-height: 0; position: relative;
+      overflow: auto; background: var(--bg);
+    }
+    .empty {
+      position: absolute; inset: 0; padding: 24px;
+      display: flex; align-items: center; justify-content: center;
+      text-align: center; color: var(--muted);
+      font: 12px/1.8 var(--sans);
+    }
+    .cards {
+      padding: 16px 20px 26px;
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+      gap: 12px;
+    }
+    .carditem {
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 12px;
+      display: flex; gap: 14px; align-items: center;
+    }
+    .chess {
+      flex: 0 0 auto; width: 140px; height: 140px;
+      display: flex; align-items: center; justify-content: center;
+      background-image: repeating-conic-gradient(#232b36 0% 25%, #182029 0% 50%);
+      background-size: 12px 12px;
+      border: 1px solid var(--border); border-radius: 8px;
+    }
+    .chess img { max-width: 124px; max-height: 124px; display: block; }
+    .carditem .info { flex: 1 1 auto; min-width: 0; }
+    .carditem .p1 { font-family: var(--mono); font-size: 13px; font-weight: 600; }
+    .carditem .p2 { font-size: 10.5px; color: var(--muted); margin-top: 3px; }
+    .carditem .p2 .ct { display: inline-block; padding: 1px 5px; margin-right: 4px;
+      border: 1px solid var(--border); border-radius: 5px; font-family: var(--mono); }
+    .carditem .btns { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
+    .carditem.dead { opacity: .65; }
+    .carditem.dead .chess { background: none; }
+
+    footer {
+      flex: 0 0 auto; padding: 9px 20px;
+      border-top: 1px solid var(--border);
+      font-size: 12px; color: var(--muted);
+      display: flex; align-items: center; gap: 8px;
+    }
+    footer .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); flex: 0 0 auto; }
+    .foot-meta { flex: 0 0 auto; display: flex; gap: 16px; font-family: var(--mono); font-size: 11px; }
+    .foot-meta .v.hl { color: var(--accent); font-weight: 600; }
+    .spacer2 { flex: 1 1 auto; }
+
+    @media (max-width: 820px) {
+      html, body { height: auto; }
+      body { overflow: visible; }
+      .layout { grid-template-columns: 1fr; grid-template-rows: auto auto; }
+      .column.left { border-right: none; border-bottom: 1px solid var(--border); }
+      .view { height: 70vh; }
+      header { padding: 11px 14px; }
+      header h1 { font-size: 15px; }
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>📦 ICNS 拆包 → PNG / WebP</h1>
+    <span class="hint">把 .icns 反向拆成 PNG / WebP 图标 · PNG 负载原样导出不重编码 · 纯本地，不上传</span>
+    <span class="spacer"></span>
+    <button type="button" class="open" id="openBtn" title="打开 .icns 文件">📂 打开 .icns</button>
+    <input type="file" id="filePick" accept=".icns,image/x-icns,application/x-icns" hidden>
+  </header>
+
+  <div class="layout">
+
+    <!-- ============ 左列：文件、清单、导出设置 ============ -->
+    <section class="column left">
+      <div class="col-head"><span>来源与清单</span></div>
+      <div class="scroll">
+        <div class="panel">
+
+          <div class="slot" id="slot">
+            <span class="ic" id="slotIc">📦</span>
+            <span class="t">
+              <span class="n" id="slotName">点击选择，或把 .icns 拖进本页</span>
+              <span class="s" id="slotMeta">支持 macOS 图标文件，内部哪种负载都能拆</span>
+            </span>
+          </div>
+
+          <div class="group">
+            <div class="group-title"><span>尺寸清单</span><small>勾选要导出的尺寸</small></div>
+            <div id="typeList"></div>
+            <div class="hint-line" id="invNote" hidden></div>
+          </div>
+
+          <div class="group">
+            <div class="group-title"><span>导出格式</span><small>WebP 不可用会自动回落 PNG</small></div>
+            <div class="seg c3" id="fmtSeg">
+              <button type="button" data-f="png" class="on">PNG</button>
+              <button type="button" data-f="webp">WebP</button>
+              <button type="button" data-f="both">两种都要</button>
+            </div>
+          </div>
+
+          <div class="group">
+            <div class="group-title"><span>说明</span></div>
+            <div class="hint-line">内部是 <b>PNG</b> 的块按字节<b>原样导出</b>（不重编码，不损一像素）；JPEG 负载照常解码；旧式 <b>RLE</b>（is32/il32）与配套 α 掩码（s8mk/l8mk）在浏览器内还原出透明通道。</div>
+            <div class="hint-line">ic04/ic05 原始 ARGB 块按「α 在前」逐字节解释——这两类只有 16/32 种理论尺寸，内容极老，若与你记忆中的原图有出入以 PNG 块为准。</div>
+            <div class="hint-line">JPEG2000 负载与 <code>icp4~icp6</code> 索引色是浏览器解不开的老古董，清单里会标灰跳过，不影响其它尺寸。</div>
+            <div class="hint-line">命令行对照：<code>iconutil -c iconset app.icns</code> 与 <code>sips -s format png</code>，本页是免装工具的等价自动版。</div>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 右列：预览与导出 ============ -->
+    <section class="column right">
+      <div class="col-head">
+        <span>预览与下载</span>
+        <div class="actions">
+          <button type="button" class="mini" id="allBtn" disabled>下载已选</button>
+        </div>
+      </div>
+
+      <div class="view">
+        <div class="empty" id="empty"><span id="emptyText">把 .icns 拖进来或点左上「打开 .icns」<br />右侧逐尺寸出卡片，勾选由左栏清单控制</span></div>
+        <div class="cards" id="cards" hidden></div>
+      </div>
+    </section>
+  </div>
+
+  <footer>
+    <span class="dot"></span>
+    <span class="foot-meta" id="metaRow" hidden>
+      <span><span class="v" id="mChunks">—</span> 块</span>
+      <span><span class="v hl" id="mItems">—</span> 尺寸</span>
+      <span><span class="v" id="mBytes">—</span> 负载合计</span>
+    </span>
+    <span class="spacer2"></span>
+    <span id="statusText">等待选择 .icns…</span>
+  </footer>
+
+<script>
+(function () {
+  "use strict";
+
+  var $ = function (id) { return document.getElementById(id); };
+
+  function humanSize(n) {
+    if (n < 1024) return n + " B";
+    if (n < 1048576) return (n / 1024).toFixed(1) + " KB";
+    return (n / 1048576).toFixed(2) + " MB";
+  }
+  function setStatus(t, warn) {
+    var el = $("statusText");
+    el.textContent = t;
+    el.style.color = warn ? "var(--warn)" : "";
+  }
+
+  /* ============================================================
+     纯函数区（抽测锚点·开始）——不碰 DOM，node 抽测直接切这整段
+     ============================================================ */
+
+  /* ---------- icns 结构 ---------- */
+  /* icns = 8 字节头（magic + 总长）+ 一串「4B 类型 + 4B 大小 + 负载」块。
+     走文件实际长度而不是声明总长——个别写入器会把尾部留白。 */
+  function parseChunks(buf) {
+    var u8 = new Uint8Array(buf);
+    if (u8.length < 8) throw new Error("文件不足 8 字节，不是 icns");
+    var magic = String.fromCharCode(u8[0], u8[1], u8[2], u8[3]);
+    if (magic !== "icns") throw new Error("文件头是 " + JSON.stringify(magic) + "，不是 icns");
+    var chunks = [], off = 8;
+    while (off + 8 <= u8.length) {
+      var type = String.fromCharCode(u8[off], u8[off + 1], u8[off + 2], u8[off + 3]);
+      var size = (u8[off + 4] << 24 | u8[off + 5] << 16 | u8[off + 6] << 8 | u8[off + 7]) >>> 0;
+      if (size < 8 || off + size > u8.length) throw new Error("第 " + (chunks.length + 1) + " 块长度越界（fc= " + type + "，声明 " + size + "B），文件可能损坏");
+      chunks.push({ type: type, size: size, payload: u8.slice(off + 8, off + size) });
+      off += size;
+    }
+    return chunks;
+  }
+
+  /* 负载嗅探：PNG / JPEG / JPEG2000 / 原始像素，先看签名再落策略 */
+  function sniff(p) {
+    if (p.length >= 8 && p[0] === 0x89 && p[1] === 0x50 && p[2] === 0x4e && p[3] === 0x47) return "png";
+    if (p.length >= 2 && p[0] === 0xff && p[1] === 0xd8) return "jpeg";
+    if (p.length >= 8 && p[4] === 0x6a && p[5] === 0x50 && p[6] === 0x20 && p[7] === 0x20) return "jp2";
+    return "raw";
+  }
+
+  /* PNG 负载的 IHDR：宽高与色彩类型（决定透明/不透明的标签） */
+  function pngInfo(p) {
+    if (p.length < 26) return null;
+    var dv = new DataView(p.buffer, p.byteOffset, p.byteLength);
+    return { w: dv.getUint32(16), h: dv.getUint32(20), colorType: p[25] };
+  }
+
+  /* ---------- 旧式 RLE（is32/il32） ----------
+     实测配平过的 icns 变体 PackBits：字面量 n<128 复制后续 n+1 字节；
+     n≥128 时把下一字节重复 n-125 次（标准 PackBits 是 257-n，差在重复段）。
+     解出 R/G/B 三个平面，α 从 s8mk/l8mk 掩码来——这正是掩码块存在的意义。 */
+  function unpackRLE(p) {
+    var out = [];
+    var i = 0;
+    while (i < p.length) {
+      var n = p[i++];
+      if (n < 128) {
+        for (var k = 0; k < n + 1 && i < p.length; k++) out.push(p[i++]);
+      } else if (i < p.length) {
+        var b = p[i++];
+        for (var k2 = 0; k2 < n - 125; k2++) out.push(b);
+      }
+    }
+    return Uint8Array.from(out);
+  }
+
+  /* 三平面 + 掩码 → RGBA ImageData 数据；掩码缺失时按全不透明（并让调用方知道） */
+  function legacyToImageData(payload, mask, W, H) {
+    var N = W * H;
+    var rgb = unpackRLE(payload);
+    if (rgb.length < N * 3) return null;
+    var data = new Uint8ClampedArray(N * 4);
+    for (var px = 0; px < N; px++) {
+      data[px * 4]     = rgb[px];
+      data[px * 4 + 1] = rgb[N + px];
+      data[px * 4 + 2] = rgb[N * 2 + px];
+      data[px * 4 + 3] = mask ? mask[px] : 255;
+    }
+    return data;
+  }
+
+  /* 原始 ARGB（ic04/ic05）：按 α 在前逐字节解释，α 通道与 RGB 分离开 */
+  function argbToImageData(p, W, H) {
+    if (p.length < W * H * 4) return null;
+    var data = new Uint8ClampedArray(W * H * 4);
+    for (var i = 0; i < W * H; i++) {
+      data[i * 4]     = p[i * 4 + 1];
+      data[i * 4 + 1] = p[i * 4 + 2];
+      data[i * 4 + 2] = p[i * 4 + 3];
+      data[i * 4 + 3] = p[i * 4];      /* 首字节 = α */
+    }
+    return data;
+  }
+
+  /* 旧式类型的清单注释 */
+  var TYPE_NOTE = {
+    ic04: "原始 ARGB", ic05: "原始 ARGB",
+    ic07: "128px", ic08: "256px", ic09: "512px",
+    ic10: "512px @2x", ic11: "16px @2x", ic12: "32px @2x",
+    ic13: "128px @2x", ic14: "256px @2x",
+    is32: "16px RLE", il32: "32px RLE",
+    icsb: "16px（10.7 新增）", ic20: "16px @4x", ic21: "32px @4x",
+    s8mk: "α 掩码", l8mk: "α 掩码"
+  };
+
+  /* ---------- 盘点：块 → 条目（同负载同尺寸的合并为一条） ----------
+     掩码块（s8mk/l8mk）不单独成条，接到它们的 RLE 主块上。
+     去重用 FNV-1a：同尺寸、同内容哈希才合并——同一枚 256px 图
+     （如 ic08 与 ic13）在文件里常有两份，清单上没有必奏要翻倍。 */
+  function fnv1a(u8) {
+    var h = 0x811c9dc5;
+    for (var i = 0; i < u8.length; i++) { h ^= u8[i]; h = (h * 0x01000193) >>> 0; }
+    return h;
+  }
+
+  function inventory(chunks) {
+    var masks = {}, items = [], i;
+    for (i = 0; i < chunks.length; i++) {
+      var t = chunks[i].type;
+      if (t === "s8mk" || t === "l8mk") masks[t] = chunks[i].payload;
+    }
+    for (i = 0; i < chunks.length; i++) {
+      var c = chunks[i];
+      var note = TYPE_NOTE[c.type] || "";
+      if (c.type === "s8mk" || c.type === "l8mk" || c.type === "toc " || c.type === "tocs") continue;
+      var kind = sniff(c.payload);
+      var it = null;
+      if (kind === "png" || kind === "jpeg") {
+        var info = kind === "png" ? pngInfo(c.payload) : null;
+        it = { kind: kind, w: info ? info.w : 0, h: info ? info.h : 0, colorType: info ? info.colorType : -1,
+               payload: c.payload, types: [c.type], note: note || "图片负载", srcBytes: c.size, hash: fnv1a(c.payload) };
+      } else if (kind === "jp2") {
+        it = { kind: "dead", deadMsg: "JPEG2000 负载——浏览器解不开，跳过", w: 0, h: 0,
+               types: [c.type], note: note || "JPEG2000", srcBytes: c.size };
+      } else if (c.type === "ic04" || c.type === "ic05") {
+        var wh = Math.round(Math.sqrt(c.payload.length / 4));
+        if (wh * wh * 4 !== c.payload.length) {
+          it = { kind: "dead", deadMsg: "原始 ARGB 块字节数对不上 16/32 方图，跳过", w: 0, h: 0, types: [c.type], note: note, srcBytes: c.size };
+        } else {
+          it = { kind: "argb", w: wh, h: wh, payload: c.payload, types: [c.type],
+                 note: note || "原始 ARGB", srcBytes: c.size, hash: fnv1a(c.payload) };
+        }
+      } else if (c.type === "is32" || c.type === "il32") {
+        var W = c.type === "is32" ? 16 : 32;
+        it = { kind: "rle", w: W, h: W, payload: c.payload, mask: masks[c.type === "is32" ? "s8mk" : "l8mk"] || null,
+               types: [c.type], note: note || "RLE", srcBytes: c.size,
+               maskedNote: masks[c.type === "is32" ? "s8mk" : "l8mk"] ? "含 α 掩码" : "缺掩码（按不透明）" };
+      } else {
+        it = { kind: "dead", deadMsg: "旧索引色/未知类型（icp4~icp6 等），跳过", w: 0, h: 0,
+               types: [c.type], note: note || "未支持", srcBytes: c.size };
+      }
+      /* 合并：同宽高、同 kind、同内容哈希 */
+      if (it.kind !== "dead" && it.hash !== undefined) {
+        for (var q = 0; q < items.length; q++) {
+          var o = items[q];
+          if (o.kind === it.kind && o.w === it.w && o.h === it.h && o.hash === it.hash) {
+            o.types.push(c.type);
+            if (it.note && o.note.indexOf(it.note) === -1) o.note += " · " + it.note;
+            o.srcBytes = Math.max(o.srcBytes, it.srcBytes);
+            it = null;
+            break;
+          }
+        }
+      }
+      if (it) items.push(it);
+    }
+    return items;
+  }
+
+  /* ============================================================
+     纯函数区（抽测锚点·结束）
+     ============================================================ */
+
+  /* ---------- 状态 ---------- */
+  var PREF_KEY = "icns-extract:fmt";
+  var state = {
+    file: null,          // 原始 File
+    chunks: null,        // parseChunks 结果
+    items: [],           // 盘点条目（checked 标出导出选择）
+    fmt: "png",
+    urls: []             // 需要回收的 objectURL
+  };
+
+  function loadPrefs() {
+    try {
+      var f = localStorage.getItem(PREF_KEY);
+      if (f === "png" || f === "webp" || f === "both") state.fmt = f;
+    } catch (e) { /* file:// 或隐私模式取不到就算了 */ }
+  }
+  function savePrefs() {
+    try { localStorage.setItem(PREF_KEY, state.fmt); } catch (e) { /* 同上 */ }
+  }
+
+  function revokeUrls() {
+    state.urls.forEach(function (u) { URL.revokeObjectURL(u); });
+    state.urls = [];
+  }
+  function trackUrl(u) { state.urls.push(u); return u; }
+
+  /* ---------- 解码：条目 → 可展示可下载的 canvas/blob ---------- */
+  function loadImage(url) {
+    return new Promise(function (res, rej) {
+      var im = new Image();
+      im.onload = function () { res(im); };
+      im.onerror = function () { rej(new Error("浏览器解不开这段负载")); };
+      im.src = url;
+    });
+  }
+  function canvasToBlob(cv, type) {
+    return new Promise(function (res) { cv.toBlob(res, type); });
+  }
+
+  function toCanvas(data, w, h) {
+    var cv = document.createElement("canvas");
+    cv.width = w; cv.height = h;
+    cv.getContext("2d").putImageData(new ImageData(data, w, h), 0, 0);
+    return cv;
+  }
+
+  /* 逐条解码，产出：previewURL（棋盘格上直接显示）、pngOut（PNG 下载物）、
+     canvas（WebP 重编码用）。PNG 负载直接用原字节，不重编码。 */
+  function decodeAll(items) {
+    var chain = Promise.resolve();
+    items.forEach(function (it) {
+      chain = chain.then(function () {
+        if (it.kind === "dead") return;
+        if (it.kind === "png") {
+          it.pngOut = new Blob([it.payload], { type: "image/png" });
+          it.previewURL = trackUrl(URL.createObjectURL(it.pngOut));
+          it.hasAlpha = it.colorType === 6 || it.colorType === 4 || it.colorType === 3;
+          return loadImage(it.previewURL).then(function (im) {
+            it.w = im.naturalWidth; it.h = im.naturalHeight;
+            var cv = document.createElement("canvas");
+            cv.width = it.w; cv.height = it.h;
+            cv.getContext("2d").drawImage(im, 0, 0);
+            it.canvas = cv;
+          });
+        }
+        if (it.kind === "jpeg") {
+          var jb = new Blob([it.payload], { type: "image/jpeg" });
+          var jurl = trackUrl(URL.createObjectURL(jb));
+          it.hasAlpha = false;
+          return loadImage(jurl).then(function (im) {
+            it.w = im.naturalWidth; it.h = im.naturalHeight;
+            var cv = document.createElement("canvas");
+            cv.width = it.w; cv.height = it.h;
+            cv.getContext("2d").drawImage(im, 0, 0);
+            it.canvas = cv;
+            return canvasToBlob(cv, "image/png").then(function (b) {
+              it.pngOut = b;
+              it.previewURL = trackUrl(URL.createObjectURL(b));
+            });
+          });
+        }
+        if (it.kind === "argb") {
+          var d1 = argbToImageData(it.payload, it.w, it.h);
+          if (!d1) { it.kind = "dead"; it.deadMsg = "原始 ARGB 块数据对不上，跳过"; return; }
+          it.hasAlpha = true;
+          return finishRaster(it, d1, it.w, it.h);
+        }
+        if (it.kind === "rle") {
+          var d2 = legacyToImageData(it.payload, it.mask, it.w, it.h);
+          if (!d2) { it.kind = "dead"; it.deadMsg = "RLE 数据解不开（长度对不上），跳过"; return; }
+          it.hasAlpha = !!it.mask;
+          return finishRaster(it, d2, it.w, it.h);
+        }
+      });
+    });
+    return chain;
+  }
+
+  function finishRaster(it, data, w, h) {
+    var cv = toCanvas(data, w, h);
+    it.canvas = cv;
+    return canvasToBlob(cv, "image/png").then(function (b) {
+      if (!b) { it.kind = "dead"; it.deadMsg = "位图编码失败，跳过"; return; }
+      it.pngOut = b;
+      it.previewURL = trackUrl(URL.createObjectURL(b));
+    });
+  }
+
+  /* ---------- 渲染 ---------- */
+  function renderList() {
+    var host = $("typeList");
+    host.innerHTML = "";
+    var deadCount = 0, selCount = 0;
+    state.items.forEach(function (it, idx) {
+      var row = document.createElement("label");
+      row.className = "trow" + (it.kind === "dead" ? " dead" : "");
+      var chips = it.types.map(function (t) { return '<span class="ct">' + t + "</span>"; }).join("") +
+        '<span class="src">' + (it.kind === "dead" ? it.deadMsg : it.note) + "</span>";
+      if (it.maskedNote) chips += '<span class="src"> · ' + it.maskedNote + "</span>";
+      row.innerHTML = '<input type="checkbox"' +
+        (it.kind === "dead" ? " disabled" : it.checked ? " checked" : "") +
+        ' data-idx="' + idx + '" /> <span class="px">' +
+        (it.kind === "dead" ? "—" : it.w + "×" + it.h) + "</span> <span class=\"chips\">" + chips +
+        '</span> <span class="bytes">' + humanSize(it.srcBytes) + "</span>";
+      host.appendChild(row);
+      if (it.kind === "dead") deadCount++;
+      else if (it.checked) selCount++;
+    });
+    var note = $("invNote");
+    if (deadCount) {
+      note.hidden = false;
+      note.textContent = "有 " + deadCount + " 个块解不开并标灰，不影响其余尺寸的导出。";
+    } else {
+      note.hidden = true;
+    }
+    return { selCount: selCount };
+  }
+
+  function renderCards() {
+    var host = $("cards");
+    host.innerHTML = "";
+    var shown = 0;
+    state.items.forEach(function (it) {
+      if (it.kind === "dead" || !it.checked) return;
+      shown++;
+      var card = document.createElement("div");
+      card.className = "carditem";
+      var chips = it.types.map(function (t) { return '<span class="ct">' + t + "</span>"; }).join("") +
+        it.note + (it.hasAlpha ? "" : "（不含透明）");
+      /* 导出按钮按格式档显示；WebP 单独做回落判断 */
+      var fmtBtns = "";
+      if (state.fmt === "png" || state.fmt === "both") fmtBtns += '<button type="button" class="mini" data-act="png">下载 PNG</button>';
+      if (state.fmt === "webp" || state.fmt === "both") fmtBtns += '<button type="button" class="mini" data-act="webp">下载 WebP</button>';
+      /* 小尺寸整数倍放大到至少 48px 以上再展示（pixelated 保持像素棱角）；
+         大图走 max 宽高自然缩。 */
+      var dw = "";
+      if (it.w <= 24) dw = " style=\"width:" + it.w * 6 + "px;image-rendering:pixelated\"";
+      else if (it.w <= 48) dw = " style=\"width:" + it.w * 3 + "px;image-rendering:pixelated\"";
+      else if (it.w <= 96) dw = " style=\"width:" + (it.w * 2) + "px\"";
+      card.innerHTML =
+        '<span class="chess"><img src="' + it.previewURL + '" alt=""' + dw + "></span>" +
+        '<span class="info">' +
+        '  <span class="p1">' + it.w + " × " + it.h + "</span>" +
+        '  <span class="p2">' + chips + " · " + humanSize(it.pngOut ? it.pngOut.size : it.srcBytes) + "</span>" +
+        '  <span class="btns">' + fmtBtns + "</span>" +
+        "</span>";
+      host.appendChild(card);
+    });
+    $("allBtn").disabled = shown === 0;
+    if (!shown) {
+      host.hidden = true;
+      $("empty").hidden = false;
+      $("emptyText").innerHTML = "左栏没有勾选任何可导出的尺寸。<br />勾上清单里的行，这里就会出卡片。";
+    } else {
+      host.hidden = false;
+      $("empty").hidden = true;
+    }
+  }
+
+  function refreshMeta() {
+    var live = state.items.filter(function (i) { return i.kind !== "dead"; });
+    var sel = live.filter(function (i) { return i.checked; });
+    var bytes = 0;
+    live.forEach(function (i) { bytes += i.srcBytes; });
+    $("mChunks").textContent = String(state.chunks.length);
+    $("mItems").textContent = sel.length + "/" + live.length;
+    $("mBytes").textContent = humanSize(bytes);
+    $("metaRow").hidden = false;
+  }
+
+  function renderAll() {
+    var info = renderList();
+    renderCards();
+    refreshMeta();
+    return info;
+  }
+
+  /* ---------- 主流程 ---------- */
+  function loadFile(f) {
+    if (!f) return;
+    if (f.size > 64 * 1048576) { setStatus("文件超过 64MB，不像正常的 icns", true); return; }
+    setStatus("解析中…", false);
+    revokeUrls();
+    var fr = new FileReader();
+    fr.onload = function () {
+      var items = [];
+      try {
+        state.chunks = parseChunks(fr.result);
+        items = inventory(state.chunks);
+      } catch (err) {
+        setStatus(err.message, true);
+        $("slotMeta").textContent = err.message;
+        return;
+      }
+      state.items = items;
+      items.forEach(function (i) { i.checked = i.kind !== "dead"; });
+      $("slotIc").textContent = "📦";
+      $("slotName").textContent = f.name;
+      $("slotMeta").textContent = humanSize(f.size) + " · " + state.chunks.length + " 个块";
+      $("slot").classList.add("filled");
+      var base = f.name;
+      state.file = f;
+      setStatus("解码负载中…", false);
+      decodeAll(items).then(function () {
+        var info = renderAll();
+        setStatus("拆包完成 · " + info.selCount + " 个尺寸可导出", false);
+      });
+    };
+    fr.onerror = function () {
+      setStatus("文件读不出来，重试一次", true);
+    };
+    fr.readAsArrayBuffer(f);
+  }
+
+  /* ---------- 文件入口：打开按钮 / slot 点击 / 拖入（同一个 picker） ---------- */
+  $("openBtn").addEventListener("click", function () { $("filePick").click(); });
+  $("slot").addEventListener("click", function () { $("filePick").click(); });
+  $("filePick").addEventListener("change", function () {
+    loadFile(this.files[0]);
+    this.value = "";   /* 清掉选择，下次还能再选同一个文件 */
+    this.blur();
+  });
+
+  var hasFiles = function (e) {
+    var t = e.dataTransfer && e.dataTransfer.types, i;
+    if (!t) return false;
+    for (i = 0; i < t.length; i++) if (t[i] === "Files") return true;
+    return false;
+  };
+  var slot = $("slot");
+  ["dragenter", "dragover"].forEach(function (ev) {
+    document.addEventListener(ev, function (e) {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      slot.classList.add("dragover");
+      $("openBtn").classList.add("flash");
+    });
+  });
+  document.addEventListener("dragleave", function (e) {
+    if (!e.relatedTarget) { slot.classList.remove("dragover"); $("openBtn").classList.remove("flash"); }
+  });
+  document.addEventListener("drop", function (e) {
+    slot.classList.remove("dragover");
+    $("openBtn").classList.remove("flash");
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    var f = e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f) loadFile(f);
+  });
+  window.addEventListener("blur", function () { slot.classList.remove("dragover"); $("openBtn").classList.remove("flash"); });
+
+  /* ---------- 格式选择 ---------- */
+  function syncFmt() {
+    var seg = $("fmtSeg").children;
+    for (var i = 0; i < seg.length; i++) {
+      var f = seg[i].getAttribute("data-f");
+      seg[i].classList.toggle("on", f === state.fmt);
+    }
+  }
+  $("fmtSeg").addEventListener("click", function (e) {
+    var f = e.target && e.target.getAttribute && e.target.getAttribute("data-f");
+    if (!f) return;
+    state.fmt = f;
+    savePrefs();
+    syncFmt();
+    renderCards();
+  });
+
+  /* ---------- 清单勾选 / 卡片下载 / 批量 ---------- */
+  $("typeList").addEventListener("change", function (e) {
+    var idx = e.target && e.target.getAttribute && e.target.getAttribute("data-idx");
+    if (idx === null || idx === undefined) return;
+    state.items[+idx].checked = e.target.checked;
+    var info = renderList();
+    renderCards();
+    refreshMeta();
+    setStatus("已选 " + info.selCount + " 个尺寸", false);
+  });
+
+  function sanitizeBase(name) {
+    var b = (name || "icon").replace(/\.[iI][cC][nN][sS]$/, "").replace(/[^\w\-]+/g, "-");
+    return b || "icon";
+  }
+
+  function downloadBlob(blob, name) {
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 3000);
+  }
+
+  function itemPngName(it) {
+    return sanitizeBase(state.file && state.file.name) + "-" + it.w + "x" + it.h + ".png";
+  }
+
+  function downloadOne(it, act) {
+    if (act === "png") {
+      downloadBlob(it.pngOut, itemPngName(it));
+      return Promise.resolve("");
+    }
+    /* WebP：真出了 webp 就用；有些浏览器只会给回 PNG（blob.type 是真实判据），
+       成不了就回落下载同名 PNG 并注明，绝不冒充扩展名。 */
+    return canvasToBlob(it.canvas, "image/webp").then(function (b) {
+      if (!b) return "该条目没有可供编码的位图";
+      if (b.type === "image/webp") {
+        downloadBlob(b, sanitizeBase(state.file && state.file.name) + "-" + it.w + "x" + it.h + ".webp");
+        return "";
+      }
+      downloadBlob(it.pngOut, itemPngName(it));
+      return it.w + "×" + it.h + "：此浏览器编码不出 WebP，已回落 PNG";
+    });
+  }
+
+  $("cards").addEventListener("click", function (e) {
+    var act = e.target && e.target.getAttribute && e.target.getAttribute("data-act");
+    if (!act) return;
+    var btn = e.target;
+    var card = btn.closest(".carditem");
+    var idx = Array.prototype.indexOf.call($("cards").children, card);
+    var it = state.items.filter(function (x) { return x.kind !== "dead" && x.checked; })[idx];
+    if (!it) return;
+    downloadOne(it, act).then(function (msg) {
+      if (msg) setStatus(msg, true);
+      else setStatus("已下载 " + itemPngName(it).replace(/\.png$/, act === "png" ? ".png" : "（WebP）"), false);
+    });
+  });
+
+  $("allBtn").addEventListener("click", function () {
+    var sel = state.items.filter(function (it) { return it.kind !== "dead" && it.checked; });
+    if (!sel.length) return;
+    setStatus("批量下载 " + sel.length + " 个尺寸…", false);
+    var kinds = state.fmt === "both" ? ["png", "webp"] : [state.fmt];
+    var chain = Promise.resolve(), notes = [];
+    sel.forEach(function (it) {
+      kinds.forEach(function (k) {
+        chain = chain.then(function () {
+          return downloadOne(it, k).then(function (msg) {
+            if (msg) notes.push(msg);
+            return new Promise(function (res) { setTimeout(res, 280); });
+          });
+        });
+      });
+    });
+    chain.then(function () {
+      if (notes.length) setStatus("批量完成，" + notes.length + " 条备注（" + notes[0] + "）", true);
+      else setStatus("批量下载完成 · " + sel.length + " 个尺寸 × " + kinds.length, false);
+    });
+  });
+
+  /* ---------- 启动 ---------- */
+  loadPrefs();
+  syncFmt();
+})();
+</script>
+</body>
+</html>
