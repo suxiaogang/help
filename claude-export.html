@@ -7,6 +7,21 @@
   <meta name="description" content="浏览与检索 Claude 导出的 conversations.json 与 memories.json：概览统计、条目列表、明细查看，纯本地解析不上传" />
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23171c24'/%3E%3Ctext x='16' y='23' font-size='18' font-weight='bold' font-family='ui-monospace,Menlo,monospace' fill='%233dd68c' text-anchor='middle'%3E%3E_%3C/text%3E%3C/svg%3E" />
   <style>
+  /* ---- 本地官方字体（assets/fonts，零 CDN）：仅拉丁/标点子集，汉字走系统字体 ----
+     Anthropic Sans（官网 UI 无衬线）→ 全局 UI + 用户气泡；
+     Anthropic Serif（官网正文衬线）→ 助手正文；单拿文件离线用则静默回落，不破版 */
+  @font-face {
+    font-family: "Anthropic Sans Web";
+    src: url("assets/fonts/AnthropicSansWebText.ttf") format("truetype");
+    font-weight: 400;
+    font-display: swap;
+  }
+  @font-face {
+    font-family: "Anthropic Serif Web";
+    src: url("assets/fonts/AnthropicSerifWebText.ttf") format("truetype");
+    font-weight: 400;
+    font-display: swap;
+  }
     /* 与各工具子页面共用同一套色板，改这里即可整体换肤 */
     :root {
       --bg: #0e1116;
@@ -19,9 +34,58 @@
       --accent-2: #2bb673;
       --warn: #ffb340;
       --radius: 10px;
+      color-scheme: dark;   /* 内置控件/滚动条跟随暗色（亮色在 theme-light 里翻转） */
       --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+      --sans: "Anthropic Sans Web", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
               "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      /* 助手正文的衬线组合：拉丁命中官方 Serif，汉字命中系统衬线（宋体系） */
+      --serif: "Anthropic Serif Web", "Songti SC", "Noto Serif SC", "SimSun", serif;
+      /* 亮暗两种都用到的品面局部色：暗色取值即原先的硬编码，亮色在 theme-light 里重定向 */
+      --hover-bg: #232c39;        /* 按钮/行悬停底 */
+      --hover-bd: #3a4557;        /* 按钮/行悬停边 */
+      --on-accent: #062315;       /* 落在 accent 底上的文字 */
+      --navi-idle: #40506b;       /* 导航横线静默态 */
+      --sb-thumb: #2a3340;        /* 滚动条拇指 */
+      --overlay: rgba(14, 17, 22, .68);   /* 读入文件时的_busy 遮罩 */
+      --shadow: rgba(0, 0, 0, .45);       /* 浮卡片阴影 */
+      --tint-slot: rgba(61, 214, 140, .05);
+      --tint-chip: rgba(61, 214, 140, .06);
+      --tint-bub: rgba(61, 214, 140, .07);
+      --tint-tab: rgba(61, 214, 140, .08);
+      --tint-bd: rgba(61, 214, 140, .38);
+      --glow: rgba(61, 214, 140, .5);
+      --pulse-a: rgba(61, 214, 140, .55);
+      --pulse-b: rgba(61, 214, 140, .28);
+    }
+
+    /* Claude 官网式亮色：燕麦底、象牙面板、陶土橙点缀（Anthropic crail 系）。
+       只重置 token 与上面这批局部色，规则主体零复制 */
+    html.theme-light {
+      color-scheme: light;
+      --bg: #faf9f5;
+      --panel: #ffffff;
+      --panel-2: #f1eee6;
+      --border: #e4e0d3;
+      --text: #1f1e1d;
+      --muted: #8a877c;
+      --accent: #d97757;
+      --accent-2: #c15f3c;
+      --warn: #b7791f;
+      --hover-bg: #f0ede4;
+      --hover-bd: #cfcab9;
+      --on-accent: #ffffff;
+      --navi-idle: #cfc9b6;
+      --sb-thumb: #d9d4c5;
+      --overlay: rgba(250, 249, 245, .72);
+      --shadow: rgba(60, 50, 40, .18);
+      --tint-slot: rgba(217, 119, 87, .05);
+      --tint-chip: rgba(217, 119, 87, .06);
+      --tint-bub: rgba(217, 119, 87, .08);
+      --tint-tab: rgba(217, 119, 87, .09);
+      --tint-bd: rgba(217, 119, 87, .30);
+      --glow: rgba(217, 119, 87, .5);
+      --pulse-a: rgba(217, 119, 87, .45);
+      --pulse-b: rgba(217, 119, 87, .22);
     }
 
     * { box-sizing: border-box; }
@@ -103,7 +167,7 @@
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
     .vnav .vitem:hover { border-color: var(--accent); }
-    .vnav .vitem.on { background: rgba(61, 214, 140, .08); border-color: var(--accent); color: var(--accent); }
+    .vnav .vitem.on { background: var(--tint-tab); border-color: var(--accent); color: var(--accent); }
 
     button {
       font: inherit; font-size: 12px; padding: 6px 12px;
@@ -112,9 +176,9 @@
       cursor: pointer; white-space: nowrap;
       transition: background .15s, border-color .15s, opacity .15s;
     }
-    button:hover:not(:disabled) { background: #232c39; border-color: #3a4557; }
+    button:hover:not(:disabled) { background: var(--hover-bg); border-color: var(--hover-bd); }
     button:disabled { opacity: .45; cursor: not-allowed; }
-    button.primary { background: var(--accent); border-color: var(--accent); color: #062315; font-weight: 600; }
+    button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
     button.primary:hover:not(:disabled) { background: var(--accent-2); border-color: var(--accent-2); }
     button.mini { padding: 4px 9px; font-size: 11px; }
 
@@ -141,7 +205,7 @@
       margin-bottom: 18px;          /* 与下方首块 .group 拉开间距，节奏对齐组距 */
       transition: border-color .2s, background-color .2s;
     }
-    .slot:hover, .slot.dragover { border-color: var(--accent); background: rgba(61, 214, 140, .05); }
+    .slot:hover, .slot.dragover { border-color: var(--accent); background: var(--tint-slot); }
     .slot.filled { border-style: solid; background: var(--panel); }
     .slot .ic { flex: 0 0 auto; font-size: 18px; opacity: .8; }
     .slot .t { flex: 1 1 auto; min-width: 0; }
@@ -156,7 +220,7 @@
       background: var(--panel); transition: border-color .2s, background-color .2s;
     }
     .fchip .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--border); flex: 0 0 auto; }
-    .fchip.hit { border-color: var(--accent); background: rgba(61, 214, 140, .06); }
+    .fchip.hit { border-color: var(--accent); background: var(--tint-chip); }
     .fchip.hit .dot { background: var(--accent); }
     .fchip .fn { flex: 0 0 auto; font-family: var(--mono); font-size: 11.5px; font-weight: 600; }
     .fchip .fx { flex: 1 1 auto; min-width: 0; font-size: 10.5px; color: var(--muted);
@@ -212,7 +276,7 @@
       background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
       cursor: pointer;
     }
-    .row:hover { border-color: #3a4557; }
+    .row:hover { border-color: var(--hover-bd); }
     .row .t { flex: 1 1 auto; min-width: 0; font-size: 12.5px;
               overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .row .kc { flex: 0 0 auto; font-size: 10px; color: var(--muted);
@@ -237,9 +301,9 @@
     /* 拷贝成功脉冲：连点时靠 remove→reflow→add 重启动画，每击都醒目 */
     .detail.copied { border-color: var(--accent); animation: copiedPulse .9s ease-out; }
     @keyframes copiedPulse {
-      0%   { box-shadow: 0 0 0 0 rgba(61, 214, 140, .55); }
-      35%  { box-shadow: 0 0 0 6px rgba(61, 214, 140, .28); }
-      100% { box-shadow: 0 0 0 10px rgba(61, 214, 140, 0); }
+      0%   { box-shadow: 0 0 0 0 var(--pulse-a); }
+      35%  { box-shadow: 0 0 0 6px var(--pulse-b); }
+      100% { box-shadow: 0 0 0 10px transparent; }
     }
 
     /* 会话明细：消息按发送者挂左边条（助手绿、用户灰），摘要无条色 */
@@ -281,7 +345,7 @@
     .md .md-a { color: var(--accent); }
     .md .md-a:hover { text-decoration: underline; }
     #vmodes { display: flex; gap: 4px; }
-    #vmodes .mini.on { background: var(--accent); border-color: var(--accent); color: #062315; font-weight: 600; }
+    #vmodes .mini.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
 
     /* =====================================================
        气泡模式（默认）：纯净还原网页版对话——用户在右、助手
@@ -317,7 +381,11 @@
     .wmod input[type="range"] { width: 88px; accent-color: var(--accent); }
     /* 滑杆随读数同住一个 footer flex item：内联化避免在 span 内折行，底缘与文字对齐 */
     .foot-meta .wmod { display: inline-flex; vertical-align: bottom; margin-left: 8px; }
-    .bub-row.human .bub { border-color: rgba(61, 214, 140, .38); background: rgba(61, 214, 140, .07); }
+    .bub-row.human .bub { border-color: var(--tint-bd); background: var(--tint-bub); }
+    /* 助手正文一律衬线（claude.ai 正文风格）：气泡模式挂在 .bub-c 上，
+       原文/Md 模式挂在 .msg.assistant 内的 .d-b 上；用户气泡与 UI 不动。
+       行高不动——衬线仅替换拉丁字形，汉字回落宋体系同样吃原行高 */
+    .bub-row.bot .bub-c, .msg.assistant .d-b { font-family: var(--serif); }
     .bub-t { font-family: var(--mono); font-size: 10.5px; color: var(--muted); letter-spacing: .2px; margin-bottom: 6px; }
     .bub-c { font-size: var(--dbase, 14px); line-height: 1.8; white-space: pre-wrap; word-break: break-word; }
     .bub-c.md { white-space: normal; line-height: 1.65; }
@@ -337,16 +405,39 @@
       display: flex; flex-direction: column; align-items: center;
       row-gap: var(--ngap, 8px);
       overflow-y: auto; scrollbar-width: none;   /* 超量时导航条内部自行滚动 */
+      /* 横向：基础态（原文/Md，detail 恒贯通）导轨贴 detail 左缘（2 / 20 不对称是旧观感）；
+         气泡态与 .detail 共用同一条宽度公式连续解算——
+         导轨左位 = pane 左线 ↔ detail 左线这段空隙里 max(贴 detail-50, 正中)：
+         空隙宽（列限宽居中）时贴 detail（20px 间隙）；
+         detail 被钳到贯通（滑杆拉满或窗口不够宽）时空隙就是 52px 走道，
+         两项重合为居中 → 11/11 对称，1512 这种「差一点满」也自动正确 */
+      --navi-padl: 52px;   /* 仅 navi-on 时可见，pane 左内距恒 52 */
+      left: 2px;
+      /* 纵向：盒中点 = 滚动区中点（col-head 41px 折半补回），高度自适应内容、
+         上限钳到滚动区内——窗宽/滑杆变化全部由 CSS 随动，JS 不再算几何 */
+      top: calc(50% + 20px);
+      transform: translateY(-50%);
+      height: auto;
+      min-height: 140px;
+      max-height: calc(100% - 77px);
+    }
+    #navi.vm-bubble {
+      left: max(
+        calc(var(--navi-padl) + (100% - var(--navi-padl) - 20px
+              - min(var(--botCol, 768px) + 32px, 100% - var(--navi-padl) - 20px)) / 2 - 50px),
+        calc((var(--navi-padl) + (100% - var(--navi-padl) - 20px
+              - min(var(--botCol, 768px) + 32px, 100% - var(--navi-padl) - 20px)) / 2 - 30px) / 2)
+      );
     }
     #navi::-webkit-scrollbar { display: none; }
     .navi-d {
       flex: 0 0 auto; position: relative;
       width: 16px; height: 4px; border-radius: 2px;
-      background: #40506b; cursor: pointer;
+      background: var(--navi-idle); cursor: pointer;
       transition: width .18s, background .18s, box-shadow .18s;
     }
     .navi-d:hover { width: 22px; background: var(--accent); }
-    .navi-d.act { width: 22px; background: var(--accent); box-shadow: 0 0 6px rgba(61, 214, 140, .5); }
+    .navi-d.act { width: 22px; background: var(--accent); box-shadow: 0 0 6px var(--glow); }
     /* tooltip 用独立节点而非 ::after(attr)：rail 需 overflow 自动滚动，
        贴在横线上的伪元素提示会被裁掉 */
     #naviTip {
@@ -355,7 +446,7 @@
       background: var(--panel-2); border: 1px solid var(--border);
       border-radius: 10px; padding: 9px 12px;
       font-size: 12px; line-height: 1.7; color: var(--text);
-      box-shadow: 0 8px 26px rgba(0, 0, 0, .45);
+      box-shadow: 0 8px 26px var(--shadow);
     }
     #naviTip .tn { font-size: 10.5px; font-weight: 600; color: var(--accent);
                    letter-spacing: .3px; margin-bottom: 4px; }
@@ -382,11 +473,12 @@
     /* 全屏 loading 遮罩（两级制：仅 >512KB 的「读入 → 同步解析」段使用） */
     .busy { position: fixed; inset: 0; z-index: 10; display: flex;
             align-items: center; justify-content: center;
-            background: rgba(14, 17, 22, .68); }
+            background: var(--overlay); }
     .busy-card { display: flex; align-items: center; gap: 12px;
                  padding: 14px 22px; font-size: 13px;
                  background: var(--panel); border: 1px solid var(--border);
-                 border-radius: var(--radius); box-shadow: 0 6px 24px rgba(0, 0, 0, .45); }
+                 border-radius: var(--radius); box-shadow: 0 6px 24px var(--shadow);
+               }
     .spin { width: 16px; height: 16px; flex: 0 0 auto;
             border: 2px solid var(--border); border-top-color: var(--accent);
             border-radius: 50%; animation: spin .8s linear infinite; }
@@ -395,9 +487,9 @@
     /* 滚动条美化（仅本页）：细圆角、贴主题色，替代浏览器默认样式 */
     ::-webkit-scrollbar { width: 10px; height: 10px; }
     ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: #2a3340; border-radius: 6px;
+    ::-webkit-scrollbar-thumb { background: var(--sb-thumb); border-radius: 6px;
                                 border: 2px solid var(--bg); background-clip: padding-box; }
-    ::-webkit-scrollbar-thumb:hover { background: #3a4557; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--hover-bd); }
     ::-webkit-scrollbar-corner { background: transparent; }
 
     @media (max-width: 820px) {
@@ -425,7 +517,7 @@
 
     <!-- ============ 左列：文件与控件 ============ -->
     <section class="column left">
-      <div class="col-head"><span>数据来源</span></div>
+      <div class="col-head"><span>数据来源</span><button type="button" class="mini" id="themeBtn" title="阅读用亮色（Claude 官网风）与工作用暗色来回切换；记住上次选择">☀️ 亮色</button></div>
       <div class="scroll">
         <div class="panel">
 
@@ -1612,6 +1704,7 @@
                !$("paneDet").hidden && vmMode === "bubble";
     $("botWWrap").hidden = !show;
     $("paneDet").classList.toggle("vm-bubble", show);   /* 阅读列限宽居中，只在气泡态生效 */
+    naviEl.classList.toggle("vm-bubble", show);   /* 导轨横向公式仅气泡态启用（CSS 连续解算，详见样式注） */
     if (show) footBotW();
     if (!naviEl.hidden) naviMeasure();   /* 类切换改变 .detail 左缘——进场时导轨可能在类生效前就已量位，这里补正 */
   }
@@ -1739,6 +1832,12 @@
   var naviItems = [];    /* {el: 消息节点, dash, tip, n} */
   var naviCur = -1;
   var spyPend = false;
+  /* 点选落点与 spy 参考线成对维护：落点把提问行放到距滚动区顶缘 20px
+     （行自身 12px 上边距 + 8px 呼吸——钉住控制条废除后的自然锚点，
+     旧 40px 是贴条下缘的遗留值，废除后顶上会空出一条莫名地带）；
+     参考线比落点低 4px：落点行严格处于参考线上方，亚像素/取整
+     也不会把高亮翻到上一轮 */
+  var NAVI_LAND = 20, NAVI_REF = NAVI_LAND + 4;
 
   function naviShow(on) {
     naviEl.hidden = !on;
@@ -1747,34 +1846,23 @@
     if (on) naviMeasure();
   }
 
-  /* 几何校正：明细条/窗格的实时矩形 → 导航条的 top/left/height。
-     窗口缩放、明细条换行都会经这里重算；
-     left 贴 .detail 列左缘（气泡模式下列居中限宽，导轨随之走位，
-     而不再死贴窗格——窗格左右还有大片空白） */
+  /* 几何已全部交给 CSS（left/top/max-height 随窗体与 --botCol 连续解算，
+     见 #navi 样式注）；JS 只在高度语境变化时重排行距。
+     窗口缩放、明细条换行都会经这里重算 */
   function naviMeasure() {
     if (naviEl.hidden) return;
-    var colB = naviEl.parentElement.getBoundingClientRect();
-    var vb = viewEl.getBoundingClientRect();
-    var db = detPane.querySelector(".detail").getBoundingClientRect();
-    /* DeepSeek 式中线安放：导轨按内容自然高先成盒（上限受滚动区高度钳制），
-       然后把盒中点放在「对话显示区中线」——提问轮数少时整串悬在中央，
-       轮数多到放不下时上下横向贴满并转入内部滚动（naviDashGap 压缩间距） */
-    var availH = (vb.bottom - colB.top) - 36;   /* 上下各留呼吸 */
-    var n = naviItems.length;
-    var natural = n < 2 ? 8 : n * 4 + (n - 1) * 8;
-    var h = Math.max(140, Math.min(natural, availH));
-    naviEl.style.height = h + "px";
-    var top = Math.max(18, ((vb.top + vb.bottom) / 2 - colB.top) - h / 2);   /* 中点=滚动区矩形中点（col-head 不计入） */
-    naviEl.style.top = top + "px";
-    naviDashGap();   /* 高度刚变过，行距按新 clientHeight 立刻重压 */
-    naviEl.style.left = Math.max(2, db.left - colB.left - 38) + "px";
+    naviDashGap();
   }
 
   /* 行距自适应：横线多时把 row-gap 压到 3px 下限，再多就让
-     导航条内部滚动（滚动时靠 setActive 把活动横线带回视野） */
+     导航条内部滚动（滚动时靠 setActive 把活动横线带回视野）。
+     可用高从视口现算而非读 clientHeight——height:auto 时盒子跟着内容走，
+     读自身会形成「压一次缩一次」的衰减回路，必须用稳定外源 */
   function naviDashGap() {
-    var n = naviItems.length, H = naviEl.clientHeight;
+    var n = naviItems.length;
     if (n < 2) { naviEl.style.setProperty("--ngap", "10px"); return; }
+    var availH = Math.max(0, viewEl.clientHeight - 36);   /* 与 max-height 的 100%-77px 同源（col-head 41 + 呼吸 36） */
+    var H = Math.max(140, Math.min(n * 4 + (n - 1) * 8, availH));
     var gap = (H - 4 - n * 4) / (n - 1);
     gap = Math.max(3, Math.min(10, gap));
     naviEl.style.setProperty("--ngap", gap.toFixed(2) + "px");
@@ -1809,7 +1897,7 @@
        页尾被滚动钳制时，目标这轮也不用把高亮让给上一轮 */
     naviSetActive(naviItems.indexOf(it));
     var v = viewEl;
-    var top = Math.max(0, it.el.getBoundingClientRect().top - v.getBoundingClientRect().top + v.scrollTop - 40);
+    var top = Math.max(0, it.el.getBoundingClientRect().top - v.getBoundingClientRect().top + v.scrollTop - NAVI_LAND);
     var before = v.scrollTop;
     try { v.scrollTo({ top: top, behavior: "smooth" }); } catch (e) { v.scrollTop = top; }
     /* 无动画环境兜底（隐藏/暂停标签页里 smooth 会冻结）：
@@ -1841,11 +1929,19 @@
     b.textContent = it.tip;
     naviTip.appendChild(b);
     naviTip.hidden = false;
-    /* 先摆位再按已量出的尺寸夹进可视范围 */
-    var x = db.right - colB.left + 12;
-    x = Math.max(4, Math.min(x, colB.width - naviTip.offsetWidth - 8));
+    /* 优先摆横线左侧（不压 .detail 正文）；左邻空间不够时才回退右侧盖内容。
+       尺寸先量（hidden 后 offset 才有值）；空间比较统一用「列内坐标」 */
+    var tipW = naviTip.offsetWidth, tipH = naviTip.offsetHeight;
+    var dashL = db.left - colB.left;          /* 横线在列内的 x */
+    var x;
+    if (dashL - tipW - 14 >= 4) {             /* 横线左边整卡放得下（含 10px 栏内距余量）→ 左侧贴，绝不不得压内容 */
+      x = dashL - tipW - 14;
+    } else {
+      /* 空间不够（窄窗/贴边布局）：回退右侧落地，锁进列宽 */
+      x = Math.max(4, Math.min(db.right + 12 - colB.left, colB.width - tipW - 8));
+    }
     var yMid = db.top + db.height / 2 - colB.top;
-    var y = Math.max(4, Math.min(yMid - naviTip.offsetHeight / 2, (vb.bottom - colB.top) - naviTip.offsetHeight - 6));
+    var y = Math.max(4, Math.min(yMid - tipH / 2, (vb.bottom - colB.top) - tipH - 6));
     naviTip.style.left = x + "px";
     naviTip.style.top = y + "px";
   }
@@ -1881,9 +1977,10 @@
   }
 
   function naviRefY() {
-    /* 参考线：滚动区顶缘放 40px——消息顶缘越过这里即「正在看这轮」
-       （旧值贴钉住的控制条下缘，控制条废除后直接对滚动区顶缘取值） */
-    return viewEl.getBoundingClientRect().top + 40;
+    /* 参考线：比点选落点（NAVI_LAND）低 4px 的呼吸线——
+       消息顶缘越过这里即「正在看这轮」；与落点解耦是防止
+       落点行恰好压线时被亚像素取整翻掉高亮 */
+    return viewEl.getBoundingClientRect().top + NAVI_REF;
   }
 
   function naviSetActive(i) {
@@ -1904,7 +2001,7 @@
   document.addEventListener("visibilitychange", function () {
     if (!document.hidden) spySoon();
   });
-  window.addEventListener("resize", function () { naviMeasure(); naviDashGap(); });
+  window.addEventListener("resize", function () { naviMeasure(); });
 
   /* =========================================================
      面包屑（右列顶栏）：数据视图 - 会话标题 [ - 用户提问 ]。
@@ -1947,6 +2044,24 @@
 
   /* ---------- 启动 ---------- */
   vnavState(null);   /* 开机：未载入数据，视图钮全禁点、无高亮 */
+
+  /* ---------- 风格切换：暗色（默认工作台）↔ 亮色（Claude 官网风阅读）----------
+     规约允许 localStorage 存界面偏好：只存一个 "light"/"dark" 字符串 */
+  var THEME_KEY = "claude-export-theme";
+  function applyTheme(t) {
+    var light = t === "light";
+    document.documentElement.classList.toggle("theme-light", light);
+    $("themeBtn").textContent = light ? "🌙 暗色" : "☀️ 亮色";   /* 按钮显示可切去的那个态 */
+    $("themeBtn").title = light ? "切回暖暗工作台风" : "切到 Claude 官网式亮色，读长对话更舒服";
+  }
+  $("themeBtn").addEventListener("click", function () {
+    var next = document.documentElement.classList.contains("theme-light") ? "dark" : "light";
+    applyTheme(next);
+    try { localStorage.setItem(THEME_KEY, next); } catch (e) {}
+  });
+  try {
+    if (localStorage.getItem(THEME_KEY) === "light") applyTheme("light");   /* 记住上次选择 */
+  } catch (e) {}
 })();
 </script>
 </body>
