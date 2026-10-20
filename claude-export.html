@@ -1,0 +1,1953 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Claude 导出解析</title>
+  <meta name="description" content="浏览与检索 Claude 导出的 conversations.json 与 memories.json：概览统计、条目列表、明细查看，纯本地解析不上传" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23171c24'/%3E%3Ctext x='16' y='23' font-size='18' font-weight='bold' font-family='ui-monospace,Menlo,monospace' fill='%233dd68c' text-anchor='middle'%3E%3E_%3C/text%3E%3C/svg%3E" />
+  <style>
+    /* 与各工具子页面共用同一套色板，改这里即可整体换肤 */
+    :root {
+      --bg: #0e1116;
+      --panel: #171c24;
+      --panel-2: #1e2632;
+      --border: #2a3340;
+      --text: #e8edf4;
+      --muted: #8b97a8;
+      --accent: #3dd68c;
+      --accent-2: #2bb673;
+      --warn: #ffb340;
+      --radius: 10px;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+              "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; }
+    /* 多处用 hidden 切换显隐，而这些元素又自带 display 规则，
+       不加这一条的话 hidden 会被作者样式盖掉，看上去「没反应」 */
+    [hidden] { display: none !important; }
+
+    body {
+      background: var(--bg); color: var(--text);
+      font-family: var(--sans); font-size: 13px;
+      display: flex; flex-direction: column; overflow: hidden;
+    }
+
+    header {
+      flex: 0 0 auto; padding: 11px 22px;
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    }
+    header h1 { font-size: 16px; margin: 0; font-weight: 600; letter-spacing: .3px; }
+    header .hint { font-size: 12px; color: var(--muted); }
+    header .spacer { flex: 1 1 auto; }
+    header .open {
+      font: inherit; font-size: 12px; color: var(--text);
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: 7px; padding: 5px 12px; cursor: pointer;
+      transition: background .15s, border-color .15s, color .15s;
+    }
+    header .open:hover, header .open.flash { border-color: var(--accent); color: var(--accent); }
+
+    .layout {
+      flex: 1 1 auto;
+      display: grid;
+      grid-template-columns: minmax(340px, 380px) minmax(0, 1fr);
+      grid-template-rows: minmax(0, 1fr);
+      min-height: 0;
+    }
+    .column { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+    .column.left { border-right: 1px solid var(--border); }
+
+    .col-head {
+      flex: 0 0 auto; padding: 9px 16px; min-height: 41px;
+      /* 左右两栏只有一栏带动作按钮时也保持等高：
+         mini 按钮（line-height:1 后高 21px）+ 上下 9px 内距 + 1px 边 = 41 */
+      font-size: 12px; font-weight: 600; color: var(--muted); letter-spacing: .5px;
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 10px; border-bottom: 1px solid var(--border);
+    }
+    .col-head .actions { display: flex; gap: 6px; align-items: center; }
+    .col-head .actions[hidden] { display: none; }   /* 非明细页整条动作排收掉（字号/拷贝/宽只归属明细） */
+    .col-head .mini { line-height: 1; }   /* 锁死按钮盒高，跨平台字体行高不一也不破等高 */
+    /* 面包屑：数据视图 - 会话标题 [ - 用户提问 ]（右列明细页）。
+       收缩省略：整个链条超宽时从提问尾部断开，不挤压右侧动作按钮 */
+    .ch-lead { display: flex; align-items: center; min-width: 0; flex: 0 1 auto; }
+    .ch-lead > span { white-space: nowrap; }          /* 「数据视图」永不折行，防挤变竖排抖布局 */
+    .ch-lead > span:not(.crumb) { flex: 0 0 auto; }   /* 标签不吃收缩：长文本全部落在面包屑的省略器上 */
+    .crumb { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .crumb[hidden] { display: none; }
+    .crumb .cs { color: var(--muted); opacity: .75; margin: 0 7px 0 6px; }
+    .crumb .ct { color: var(--text); font-weight: 600; }
+    .crumb .cq { color: var(--muted); font-weight: 500; }
+    .crumb #backBtn { flex: 0 0 auto; margin: 0 8px; }   /* 返回钮住面包屑里：随面包屑显隐；左右各留一格呼吸 */
+
+    /* 数据视图入口钮：搬进左栏做竖排入口组（文件类型组之下）；
+       样式与左栏 fchip 同族——卡片钮 + 右侧灰斜述；当前页绿字亮边。
+       没载入数据时两钮禁点且不高亮（.vitem 走通用 button:disabled 灰化） */
+    .vnav { display: flex; flex-direction: column; gap: 6px; }
+    .vnav .vitem {
+      display: flex; align-items: baseline; gap: 8px; width: 100%;
+      text-align: left; font: inherit; font-size: 12.5px; font-weight: 600;
+      padding: 9px 12px; color: var(--text);
+      background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+      cursor: pointer;
+      transition: border-color .2s, background-color .2s;
+    }
+    .vnav .vitem small {
+      flex: 1 1 auto; min-width: 0; text-align: right;
+      font-weight: 400; font-size: 10.5px; color: var(--muted);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .vnav .vitem:hover { border-color: var(--accent); }
+    .vnav .vitem.on { background: rgba(61, 214, 140, .08); border-color: var(--accent); color: var(--accent); }
+
+    button {
+      font: inherit; font-size: 12px; padding: 6px 12px;
+      border-radius: 7px; border: 1px solid var(--border);
+      background: var(--panel-2); color: var(--text);
+      cursor: pointer; white-space: nowrap;
+      transition: background .15s, border-color .15s, opacity .15s;
+    }
+    button:hover:not(:disabled) { background: #232c39; border-color: #3a4557; }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+    button.primary { background: var(--accent); border-color: var(--accent); color: #062315; font-weight: 600; }
+    button.primary:hover:not(:disabled) { background: var(--accent-2); border-color: var(--accent-2); }
+    button.mini { padding: 4px 9px; font-size: 11px; }
+
+    .panel { padding: 16px 18px 12px; }
+    .group + .group { margin-top: 18px; }
+    .group-title {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 8px; font-size: 11.5px; font-weight: 600; color: var(--muted);
+      letter-spacing: .4px; margin-bottom: 9px;
+    }
+    .group-title small { color: var(--muted); font-weight: 400; margin-left: 5px; }
+
+    .hint-line { margin-top: 7px; font-size: 11px; line-height: 1.5; color: var(--muted); }
+    .hint-line b { color: var(--text); font-weight: 600; }
+    .hint-line code { font-family: var(--mono); color: var(--text); }
+    .hint-line.warn { color: var(--warn); }
+    .hint-line + .hint-line { margin-top: 4px; }
+
+    /* 文件槽：虚线圆角 / 拖入或点击，加载后显示文件信息 */
+    .slot {
+      border: 1px dashed var(--border); border-radius: var(--radius);
+      padding: 13px 15px; cursor: pointer;
+      display: flex; align-items: center; gap: 10px;
+      margin-bottom: 18px;          /* 与下方首块 .group 拉开间距，节奏对齐组距 */
+      transition: border-color .2s, background-color .2s;
+    }
+    .slot:hover, .slot.dragover { border-color: var(--accent); background: rgba(61, 214, 140, .05); }
+    .slot.filled { border-style: solid; background: var(--panel); }
+    .slot .ic { flex: 0 0 auto; font-size: 18px; opacity: .8; }
+    .slot .t { flex: 1 1 auto; min-width: 0; }
+    .slot .t .n { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .slot .t .s { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+    /* 文件类型确认块：两种目标文件，载入后对应的行点亮 */
+    .fchip {
+      display: flex; align-items: center; gap: 9px;
+      padding: 8px 10px; margin-top: 6px;
+      border: 1px solid var(--border); border-radius: 8px;
+      background: var(--panel); transition: border-color .2s, background-color .2s;
+    }
+    .fchip .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--border); flex: 0 0 auto; }
+    .fchip.hit { border-color: var(--accent); background: rgba(61, 214, 140, .06); }
+    .fchip.hit .dot { background: var(--accent); }
+    .fchip .fn { flex: 0 0 auto; font-family: var(--mono); font-size: 11.5px; font-weight: 600; }
+    .fchip .fx { flex: 1 1 auto; min-width: 0; font-size: 10.5px; color: var(--muted);
+                 overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    /* ---- 右栏 ---- */
+    .view {
+      flex: 1 1 auto; min-height: 0; position: relative;
+      overflow: auto; background: var(--bg);
+    }
+    .empty {
+      position: absolute; inset: 0; padding: 24px;
+      display: flex; align-items: center; justify-content: center;
+      text-align: center; color: var(--muted);
+      font: 12px/1.8 var(--sans);
+    }
+    .pane { padding: 18px 20px 26px; }
+
+    /* 概览：统计卡片一排（min=180px 为实测合适值，「k + 完整时间值」同行不折） */
+    .stats {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 10px;
+    }
+    .stat {
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 12px 14px;
+    }
+    /* 首卡可点进列表：给个可按的相 + 悬停亮边，让人知道数字卡也是入口 */
+    .stat.linkable { cursor: pointer; }
+    .stat.linkable:hover { border-color: var(--accent); }
+    .stat.linkable .k::after { content: " ›"; color: var(--accent); font-weight: 600; }
+    .stat .k { font-size: 11px; color: var(--muted); letter-spacing: .4px; }
+    .stat .v { margin-left: .35em; font-family: var(--mono); font-size: 15px; font-weight: 600; }
+    .stat .s { display: block; margin-top: 5px; font-size: 10.5px; color: var(--muted); }
+
+    /* 列表：搜索条（钉住形式与明细控制条一致） + 行 */
+    .search {
+      position: sticky; top: 0; z-index: 3;   /* 列表滚动也钉顶 */
+      display: flex; gap: 8px; align-items: center;
+      padding: 6px 0 12px;
+      background: var(--bg);                   /* 钉住后内容从底下穿过不透字 */
+    }
+    .search input {
+      flex: 1 1 auto; font: inherit; font-size: 12px;
+      background: var(--panel); color: var(--text);
+      border: 1px solid var(--border); border-radius: 7px; padding: 8px 12px;
+    }
+    .search input::placeholder { color: var(--muted); }
+    .search input:focus { outline: none; border-color: var(--accent); }
+    .row {
+      display: flex; align-items: center; gap: 10px;
+      padding: 9px 12px; margin-top: 7px;
+      background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+      cursor: pointer;
+    }
+    .row:hover { border-color: #3a4557; }
+    .row .t { flex: 1 1 auto; min-width: 0; font-size: 12.5px;
+              overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .row .kc { flex: 0 0 auto; font-size: 10px; color: var(--muted);
+               border: 1px solid var(--border); border-radius: 5px; padding: 1px 5px; }
+    .row .m { flex: 0 0 auto; font-family: var(--mono); font-size: 10.5px; color: var(--muted); }
+    /* 占位幽灵行：UI 定稿用，真实行接入后删除 */
+    .ghost {
+      height: 34px; margin-top: 7px;
+      background: var(--panel); border: 1px dashed var(--border); border-radius: 8px;
+      opacity: .55;
+    }
+
+    /* 明细：面板骨架 */
+    .detail {
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 14px 16px;
+    }
+    .detail .d-t { font-size: 13px; font-weight: 600; }
+    .detail .d-m { margin-top: 4px; font-family: var(--mono); font-size: 10.5px; color: var(--muted); }
+    /* 正文字号独立可调：--dbase 由明细栏的 A-/A+ 按钮改（仅本页，不进全局约束） */
+    .detail .d-b { margin-top: 10px; font-size: var(--dbase, 14px); line-height: 1.8; white-space: pre-wrap; }
+    /* 拷贝成功脉冲：连点时靠 remove→reflow→add 重启动画，每击都醒目 */
+    .detail.copied { border-color: var(--accent); animation: copiedPulse .9s ease-out; }
+    @keyframes copiedPulse {
+      0%   { box-shadow: 0 0 0 0 rgba(61, 214, 140, .55); }
+      35%  { box-shadow: 0 0 0 6px rgba(61, 214, 140, .28); }
+      100% { box-shadow: 0 0 0 10px rgba(61, 214, 140, 0); }
+    }
+
+    /* 会话明细：消息按发送者挂左边条（助手绿、用户灰），摘要无条色 */
+    .msg { border-left: 2px solid var(--border); padding-left: 12px; margin-bottom: 16px; }
+    .msg.assistant { border-left-color: var(--accent); }
+    .msg .mh { display: flex; gap: 10px; align-items: baseline; margin-bottom: 6px;
+               font-family: var(--mono); font-size: 10.5px; color: var(--muted); }
+    .msg .mh .who { font-weight: 600; color: var(--text); }
+    .msg.assistant .mh .who { color: var(--accent); }
+    .sum { font-size: 12px; color: var(--muted); margin: 8px 0 16px; }
+    /* 工具块：原生 <details> 折叠（零脚本依赖） */
+    details.tcall { margin: 8px 0 0; border: 1px solid var(--border); border-radius: 8px; padding: 5px 9px; }
+    details.tcall > summary { cursor: pointer; font-family: var(--mono); font-size: 11px; color: var(--muted); }
+    details.tcall > summary:hover { color: var(--text); }
+    details.tcall .tj { margin: 6px 0 2px; font-family: var(--mono); font-size: 11px;
+                        color: var(--text); white-space: pre-wrap; word-break: break-word; }
+    #moreBtn { display: block; margin: 2px 0 6px; }
+    /* Markdown 渲染态：只作用于助手的回复文本；纯文本态完全不动 */
+    .md { line-height: 1.65; }
+    .md .md-p { margin: 0 0 .6em; }
+    .md .md-h { font-weight: 600; margin: .9em 0 .45em; }
+    .md .md-h1 { font-size: 1.45em; }
+    .md .md-h2 { font-size: 1.28em; }
+    .md .md-h3 { font-size: 1.12em; }
+    .md .md-h4, .md .md-h5, .md .md-h6 { font-size: 1em; }
+    .md .md-code { margin: 0 0 .6em; background: var(--panel-2); border: 1px solid var(--border);
+                   border-radius: 8px; padding: 9px 11px; overflow-x: auto; }
+    .md .md-code code { font-family: var(--mono); font-size: 11.5px; white-space: pre; }
+    .md .md-ic { background: var(--panel-2); border: 1px solid var(--border); border-radius: 4px;
+                 padding: 0 4px; font-family: var(--mono); font-size: .86em; }
+    .md .md-q { border-left: 3px solid var(--accent); padding: 2px 0 2px 10px;
+                color: var(--muted); margin: 0 0 .6em; }
+    .md ul, .md ol { margin: 0 0 .6em; padding-left: 1.5em; }
+    .md li { margin: .2em 0; }
+    .md .md-hr { border: 0; border-top: 1px solid var(--border); margin: .8em 0; }
+    .md .md-tbl { border-collapse: collapse; margin: 0 0 .6em; max-width: 100%; }
+    .md .md-tbl th, .md .md-tbl td { border: 1px solid var(--border); padding: 4px 8px; font-size: 12px; }
+    .md .md-tbl th { background: var(--panel-2); }
+    .md .md-a { color: var(--accent); }
+    .md .md-a:hover { text-decoration: underline; }
+    #vmodes { display: flex; gap: 4px; }
+    #vmodes .mini.on { background: var(--accent); border-color: var(--accent); color: #062315; font-weight: 600; }
+
+    /* =====================================================
+       气泡模式（默认）：纯净还原网页版对话——用户在右、助手
+       在左；只留问答正文与时间戳，工具调用/thinking 等中间
+       过程整条隐藏（消息里只剩非空元素不进 DOM）。
+       ===================================================== */
+    .bub-row { display: flex; margin: 12px 0 0; }
+    .bub-row.first { margin-top: 2px; }
+    .bub-row.human { justify-content: flex-end; }
+    .bub-row.bot { justify-content: flex-start; }
+    .bub {
+      max-width: min(640px, 76%);   /* 用户侧维持现宽度 */
+      background: var(--panel-2); border: 1px solid var(--border);
+      border-radius: 12px; padding: 9px 12px 10px;
+    }
+    /* 助手侧裸排版：无卡片、无边框，像主流网页版那样从左起全宽流式文本；
+       左右之别靠「有框 vs 无框」，不再靠中线二分 */
+    .bub-row.bot .bub {
+      /* 内容宽度滑杆可调（--botCol 由顶栏滑杆设置；默认 768px ≈ ChatGPT 内容列）；
+         min(…, 100%) 保窄窗不破格。勾「全宽」= 直接贯通到容器边缘 */
+      max-width: min(var(--botCol, 768px), 100%);
+      background: transparent; border: 0; border-radius: 0; padding: 0 14px 0 0;
+    }
+    /* 气泡模式：限宽的只挪 .detail 阅读区本身并居中（同主流网页版正文列），
+       阅读区限宽居中而控制条不参与 → 滑杆/读数都在 footer，拖动不引起顶栏晃动。
+       .detail 自带 16px 左右内距：max-width = 滑杆值 + 32 → 列内正文恰好 = 滑杆值 */
+    #paneDet.vm-bubble .detail {
+      max-width: calc(var(--botCol, 768px) + 32px);
+      margin: 0 auto;
+    }
+
+    .wmod { display: flex; gap: 6px; align-items: center; font-size: 11px; color: var(--muted); }
+    .wmod input[type="range"] { width: 88px; accent-color: var(--accent); }
+    /* 滑杆随读数同住一个 footer flex item：内联化避免在 span 内折行，底缘与文字对齐 */
+    .foot-meta .wmod { display: inline-flex; vertical-align: bottom; margin-left: 8px; }
+    .bub-row.human .bub { border-color: rgba(61, 214, 140, .38); background: rgba(61, 214, 140, .07); }
+    .bub-t { font-family: var(--mono); font-size: 10.5px; color: var(--muted); letter-spacing: .2px; margin-bottom: 6px; }
+    .bub-c { font-size: var(--dbase, 14px); line-height: 1.8; white-space: pre-wrap; word-break: break-word; }
+    .bub-c.md { white-space: normal; line-height: 1.65; }
+
+    /* =====================================================
+       会话导航条（仅本页实验，未进全局约定）：仿 DeepSeek 网页版
+       左缘短横线——每条对应一轮用户提问：
+       悬停浮出提问正文、点按平滑滚动、滚动时高亮所在轮。
+       挂载在 .column.right（不随 .view 内容滚动），竖向框在
+       钉住的明细条之下的可视带；横线随分块渲染逐条长出。
+       ===================================================== */
+    .column.right { position: relative; }     /* 导航条 / tooltip 的定位锚 */
+    #paneDet.navi-on { padding-left: 52px; }  /* 给导航条让出左缘走道 */
+    #navi {
+      position: absolute; z-index: 4;
+      width: 30px;
+      display: flex; flex-direction: column; align-items: center;
+      row-gap: var(--ngap, 8px);
+      overflow-y: auto; scrollbar-width: none;   /* 超量时导航条内部自行滚动 */
+    }
+    #navi::-webkit-scrollbar { display: none; }
+    .navi-d {
+      flex: 0 0 auto; position: relative;
+      width: 16px; height: 4px; border-radius: 2px;
+      background: #40506b; cursor: pointer;
+      transition: width .18s, background .18s, box-shadow .18s;
+    }
+    .navi-d:hover { width: 22px; background: var(--accent); }
+    .navi-d.act { width: 22px; background: var(--accent); box-shadow: 0 0 6px rgba(61, 214, 140, .5); }
+    /* tooltip 用独立节点而非 ::after(attr)：rail 需 overflow 自动滚动，
+       贴在横线上的伪元素提示会被裁掉 */
+    #naviTip {
+      position: absolute; z-index: 6; max-width: 380px; max-height: 46vh;
+      overflow: auto; pointer-events: none; white-space: pre-wrap;
+      background: var(--panel-2); border: 1px solid var(--border);
+      border-radius: 10px; padding: 9px 12px;
+      font-size: 12px; line-height: 1.7; color: var(--text);
+      box-shadow: 0 8px 26px rgba(0, 0, 0, .45);
+    }
+    #naviTip .tn { font-size: 10.5px; font-weight: 600; color: var(--accent);
+                   letter-spacing: .3px; margin-bottom: 4px; }
+
+    /* 会话头：conversations 明细把对话标题/元信息放进消息流顶部（面板级 dTitle 只留给记忆条目） */
+    .cv-head { padding: 2px 2px 12px; border-bottom: 1px solid var(--border); margin-bottom: 14px; }
+    .cv-t { font-size: 15px; font-weight: 650; line-height: 1.5; }
+    .cv-m { margin-top: 6px; font-size: 11px; color: var(--muted); letter-spacing: .2px; }
+    .ghost-text { margin-top: 10px; height: 120px;
+      background: var(--panel-2); border: 1px dashed var(--border); border-radius: 8px; opacity: .55; }
+
+    footer {
+      flex: 0 0 auto; padding: 9px 20px;
+      border-top: 1px solid var(--border);
+      font-size: 12px; color: var(--muted);
+      display: flex; align-items: center; gap: 8px;
+    }
+    footer .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); flex: 0 0 auto; }
+    .foot-meta { flex: 0 0 auto; display: flex; gap: 16px; align-items: baseline; font-family: var(--mono); font-size: 11px; }
+    .foot-meta .v.hl { color: var(--accent); font-weight: 600; }
+    #statusText { font-size: 11px; }
+    .spacer2 { flex: 1 1 auto; }
+
+    /* 全屏 loading 遮罩（两级制：仅 >512KB 的「读入 → 同步解析」段使用） */
+    .busy { position: fixed; inset: 0; z-index: 10; display: flex;
+            align-items: center; justify-content: center;
+            background: rgba(14, 17, 22, .68); }
+    .busy-card { display: flex; align-items: center; gap: 12px;
+                 padding: 14px 22px; font-size: 13px;
+                 background: var(--panel); border: 1px solid var(--border);
+                 border-radius: var(--radius); box-shadow: 0 6px 24px rgba(0, 0, 0, .45); }
+    .spin { width: 16px; height: 16px; flex: 0 0 auto;
+            border: 2px solid var(--border); border-top-color: var(--accent);
+            border-radius: 50%; animation: spin .8s linear infinite; }
+    @keyframes spin { to { transform: rotate(1turn); } }
+
+    /* 滚动条美化（仅本页）：细圆角、贴主题色，替代浏览器默认样式 */
+    ::-webkit-scrollbar { width: 10px; height: 10px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #2a3340; border-radius: 6px;
+                                border: 2px solid var(--bg); background-clip: padding-box; }
+    ::-webkit-scrollbar-thumb:hover { background: #3a4557; }
+    ::-webkit-scrollbar-corner { background: transparent; }
+
+    @media (max-width: 820px) {
+      html, body { height: auto; }
+      body { overflow: visible; }
+      .layout { grid-template-columns: 1fr; grid-template-rows: auto auto; }
+      .column.left { border-right: none; border-bottom: 1px solid var(--border); }
+      .view { height: 70vh; }
+      header { padding: 11px 14px; }
+      header h1 { font-size: 15px; }
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>🧠 Claude 导出解析</h1>
+    <span class="hint">浏览 Claude 导出的 conversations.json / memories.json · 纯本地解析不上传</span>
+    <span class="spacer"></span>
+    <button type="button" class="open" id="openBtn" title="打开导出文件">📂 打开导出文件</button>
+    <input type="file" id="filePick" accept=".json,application/json" hidden>
+  </header>
+
+  <div class="layout">
+
+    <!-- ============ 左列：文件与控件 ============ -->
+    <section class="column left">
+      <div class="col-head"><span>数据来源</span></div>
+      <div class="scroll">
+        <div class="panel">
+
+          <div class="slot" id="slot">
+            <span class="ic" id="slotIc">🧠</span>
+            <span class="t">
+              <span class="n" id="slotName">点击选择，或把导出文件拖进本页</span>
+              <span class="s" id="slotMeta">conversations.json（会话历史）或 memories.json（记忆库）</span>
+            </span>
+          </div>
+
+          <div class="group">
+            <div class="group-title"><span>文件类型</span><small>载入后自动点亮对应行</small></div>
+            <div class="fchip" data-target="conversations">
+              <span class="dot"></span>
+              <span class="fn">conversations.json</span>
+              <span class="fx">会话历史 · 支持概览 / 列表 / 明细三级浏览</span>
+            </div>
+            <div class="fchip" data-target="memories">
+              <span class="dot"></span>
+              <span class="fn">memories.json</span>
+              <span class="fx">记忆库 · 结构更简单，逐条浏览</span>
+            </div>
+          </div>
+
+          <div class="group">
+            <div class="group-title"><span>视图</span><small>点此切换右侧内容</small></div>
+            <div class="vnav" id="vseg">
+              <button type="button" class="vitem" data-v="ov">概览<small>总量 · 时间跨度</small></button>
+              <button type="button" class="vitem" data-v="list">列表<small>逐条扫描 · 搜索</small></button>
+            </div>
+          </div>
+
+          <div class="group">
+            <div class="group-title"><span>说明</span></div>
+            <div class="hint-line">文件由 Claude 官方导出功能生成，本页只读取与展示，<b>不上传</b>；解析在浏览器内完成。</div>
+            <div class="hint-line">三级视图：<b>概览</b>看总量与时间跨度，<b>列表</b>逐条扫描与搜索（会话级），<b>明细</b>看单条全文。</div>
+            <div class="hint-line">概览页的第一张统计卡（<b>会话</b> / <b>记忆文件</b>）可以直接点，直达列表。</div>
+            <div class="hint-line">明细页返回列表用「◀ 返回列表」；列表页内搜索高频用，明细页看全文用浏览器自带 <b>Ctrl/Cmd + F</b> 更顺手。</div>
+            <div class="hint-line">气泡模式下右上有<b>「宽」</b>滑杆：调阅读列宽度（默认 768px 常见网页版宽，拉到最右＝全宽）；旁边的 <b>A－/A＋/⟲</b> 调整明细字号。</div>
+            <div class="hint-line">会话左侧竖线上每条横线是一轮提问：<b>悬停</b>看问题、<b>点击</b>跳转到那一轮。</div>
+            <div class="hint-line">支持 <b>memories.json</b> 与 <b>conversations.json</b> 两种导出；按结构自动识别，列表粒度分别是记忆条目 / 会话。</div>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 右列：数据视图 ============ -->
+    <section class="column right">
+      <div class="col-head">
+        <div class="ch-lead"><span>数据视图</span><span class="crumb" id="crumb" hidden><button type="button" class="mini" id="backBtn">◀ 返回列表</button></span></div>
+        <div class="actions" id="actBar" hidden>
+          <button type="button" class="mini" id="szDown" title="明细字号缩小（12px 下限）" disabled>A－</button>
+          <button type="button" class="mini" id="szUp" title="明细字号放大（24px 上限）" disabled>A＋</button>
+          <button type="button" class="mini" id="szReset" title="恢复默认字号（14px）" disabled>⟲</button>
+          <button type="button" class="mini" id="cpBtn" title="拷贝正文内容（不含元信息）" disabled>拷贝</button>
+          <span class="vmodes" id="vmodes">
+            <button type="button" class="mini" data-vm="plain" title="原始文本：未渲染的 Markdown 源码（保留工具调用等中间过程）" disabled>原文</button>
+            <button type="button" class="mini" data-vm="md" title="Markdown 渲染：只渲染助手的回复文本（保留工具调用等中间过程）" disabled>Md</button>
+            <button type="button" class="mini" data-vm="bubble" title="纯净气泡：一左一右对话气泡，只显示问答与时间，隐藏工具调用" disabled>气泡</button>
+          </span>
+        </div>
+      </div>
+
+      <div class="view">
+        <div class="empty" id="empty"><span id="emptyText">把导出文件拖进来或点左上「打开导出文件」<br />概览 / 列表 / 明细三个视图分别展示统计、条目与单条全文</span></div>
+
+        <div class="pane" id="paneOv" hidden>
+          <div class="stats">
+            <div class="stat"><span class="k" id="stkA">记忆文件</span><span class="v" id="stA">—</span><span class="s" id="stAs"></span></div>
+            <div class="stat"><span class="k" id="stkB">项目记忆</span><span class="v" id="stB">—</span><span class="s" id="stBs"></span></div>
+            <div class="stat"><span class="k" id="stkC">会话记忆</span><span class="v" id="stC">—</span><span class="s" id="stCs"></span></div>
+            <div class="stat"><span class="k" id="stkD">导出大小</span><span class="v" id="stD">—</span><span class="s" id="stDs"></span></div>
+            <div class="stat"><span class="k" id="stkE">最早更新</span><span class="v" id="stE">—</span><span class="s" id="stEs"></span></div>
+            <div class="stat"><span class="k" id="stkF">最新更新</span><span class="v" id="stF">—</span><span class="s" id="stFs"></span></div>
+          </div>
+          <div class="hint-line" id="ovHint" style="margin-top:14px">「记忆文件」按 <code>memory_files</code> 个数计；时间取各文件 <code>updated_at</code> 的最早/最晚值。</div>
+        </div>
+
+        <div class="pane" id="paneList" hidden>
+          <div class="search">
+            <input type="text" id="q" placeholder="在名称与全文里搜（大小写不敏感）" disabled />
+            <button type="button" class="mini" id="qBtn" disabled>搜索</button>
+          </div>
+          <div id="rows"></div>
+        </div>
+
+        <div class="pane" id="paneDet" hidden>
+          <div class="detail">
+            <div class="d-t" id="dTitle">（明细标题）</div>
+            <div class="d-m" id="dMeta">—</div>
+            <div class="d-b" id="dBody"></div>
+            <div id="msgs" hidden></div>
+            <button type="button" class="mini" id="moreBtn" hidden>加载余下</button>
+            <div class="ghost-text" id="dGhost"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 会话导航条：挂在列容器上（不随 .view 内容滚动）；tooltip 同层级防 rail overflow 裁剪 -->
+      <div id="navi" hidden aria-label="会话导航条"></div>
+      <div id="naviTip" hidden></div>
+    </section>
+  </div>
+
+  <div class="busy" id="busy" hidden>
+    <div class="busy-card"><span class="spin"></span><span id="busyText">读取…</span></div>
+  </div>
+
+  <footer>
+    <span class="dot"></span>
+    <span class="foot-meta" id="metaRow" hidden>
+      <span><span class="v hl" id="mType">—</span></span>
+      <span><span class="v" id="mBytes">—</span></span>
+      <span><span class="v" id="mN">—</span> 条</span>
+      <span id="szWrap"><span class="v hl" id="szStatus">14px</span> 字号</span>
+      <span id="botWWrap" hidden><span class="v hl" id="botWStatus">—</span> 宽<label class="wmod" id="wmodLbl" title="气泡模式：调阅读列宽度（默认 768px，常见网页版正文宽）；拉到最右＝全宽档"><input type="range" id="botW" min="560" max="1520" step="8" value="768" /></label></span>
+    </span>
+    <span class="spacer2"></span>
+    <span id="statusText">等待选择导出文件…</span>
+  </footer>
+
+<script>
+(function () {
+  "use strict";
+
+  var $ = function (id) { return document.getElementById(id); };
+
+  function setStatus(t, warn) {
+    var el = $("statusText");
+    el.textContent = t;
+    el.style.color = warn ? "var(--warn)" : "";
+  }
+  function humanSize(n) {
+    if (n < 1024) return n + " B";
+    if (n < 1048576) return (n / 1024).toFixed(1) + " KB";
+    return (n / 1048576).toFixed(2) + " MB";
+  }
+  /* 文件内容要进 HTML 的唯一入口：富文本一律不插 innerHTML，此函数兜底走 textContent */
+  function esc(s) {
+    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+  function fmtDay(iso) {
+    var m = /^(\d{4}-\d{2}-\d{2})/.exec(String(iso || ""));
+    return m ? m[1] : "";
+  }
+  function fmtFull(iso) {
+    return String(iso || "").replace("T", " ").replace(/\.\d+/, "");
+  }
+
+  /* JSON 错误消息带 position 时换算成行列（需要原文 txt 计数） */
+  function jsonErr(e, txt) {
+    var msg = String(e && e.message || "解析失败");
+    var m = /position (\d+)/.exec(msg);
+    if (!m) return msg;
+    var pos = +m[1], line = 1, col = 1;
+    for (var i = 0; i < pos && i < txt.length; i++) {
+      if (txt[i] === "\n") { line++; col = 1; } else { col++; }
+    }
+    return msg.replace(/position \d+/, "第 " + line + " 行第 " + col + " 列");
+  }
+
+  /* =========================================================
+     YAML front-matter 极简解析：只抽 name / description /
+     aliases / sources 四个键。不追求完整 YAML——那是死路的开始；
+     记忆文件的本体是正文，front-matter 仅供清单与检索。
+     ========================================================= */
+  function parseFM(md) {
+    var out = { name: "", description: "", aliases: [], sources: [], body: String(md || "") };
+    var md2 = out.body;
+    if (!/^---\n/.test(md2)) return out;
+    var end = md2.indexOf("\n---", 3);
+    if (end < 0) return out;
+    var body = md2.slice(end + 4);
+    if (body.charCodeAt(0) === 10) body = body.slice(1);
+    out.body = body;
+    var cur = "";
+    md2.slice(4, end).split("\n").forEach(function (ln) {
+      var li = /^\s*-\s*(.+)$/.exec(ln);
+      if (li && cur) {
+        out[cur].push(li[1].trim().replace(/^["']+|["']+$/g, ""));
+        return;
+      }
+      var kv = /^([A-Za-z_-]+):\s*(.*)$/.exec(ln);
+      if (!kv) return;
+      var k = kv[1], v = kv[2].trim();
+      if (k === "aliases" || k === "sources") { cur = k; }
+      else { cur = ""; }
+      if (k === "name" || k === "description") out[k] = v.replace(/^["']+|["']+$/g, "");
+      if ((k === "aliases" || k === "sources") && v) {
+        if (v[0] === "[") v = v.slice(1, v.lastIndexOf("]") === -1 ? v.length : v.lastIndexOf("]"));
+        v.split(",").forEach(function (x) {
+          x = x.trim().replace(/^["']+|["']+$/g, "");
+          if (x) out[k].push(x);
+        });
+      }
+    });
+    return out;
+  }
+
+  /* =========================================================
+     类型探测：靠结构特征而不是文件名——文件改了名也能认出。
+     memories: 单元素数组，[0] 带 memory_files 数组；
+     conversations: 其它数组形态（其一轮接入，先认出来指个路）。
+     ========================================================= */
+  function detect(root) {
+    if (Array.isArray(root) && root.length === 1 && root[0] && typeof root[0] === "object" &&
+        Array.isArray(root[0].memory_files)) return "memories";
+    if (Array.isArray(root) && root.length > 0 && root[0] && typeof root[0] === "object" &&
+        Array.isArray(root[0].chat_messages)) return "conversations";
+    return null;
+  }
+
+  /* =========================================================
+     conversations.json：会话行流与消息块工具
+     content[] 是异构块：text / tool_use / tool_result（其余类型防御性兜底），
+     一律 textContent 插入，绝不碰 innerHTML。
+     ========================================================= */
+  function safeStr(v) { return typeof v === "string" ? v : ""; }
+
+  /* content[] 里的字符串集合（每个都可能带截断标注）——检索面与正文共用 */
+  function blockStrings(c) {
+    if (c === null || c === undefined) return [];
+    if (typeof c === "string") return [c];
+    var t = c.type, out = [];
+    if (t === "text") { if (typeof c.text === "string") out.push(c.text); }
+    else if (t === "tool_use") { out.push("[工具调用] " + safeStr(c.name) + " " + safeStr(c.message)); }
+    else if (t === "tool_result") {
+      (Array.isArray(c.content) ? c.content : []).forEach(function (rc) {
+        if (typeof rc === "string") out.push(rc);
+        else if (rc && typeof rc === "object" && typeof rc.text === "string") out.push(rc.text);
+        else { try { out.push(JSON.stringify(rc)); } catch (e) { /* 循环引用等极端情况丢弃 */ } }
+      });
+      if (typeof c.message === "string") out.push(c.message);
+    } else {
+      try { var s = JSON.stringify(c); if (s && s !== "{}") out.push(s); } catch (e2) { /* 同上 */ }
+    }
+    return out;
+  }
+
+  /* 一条消息的纯文本（text 块 + 工具块的摘要文本），用于检索与拷贝转写 */
+  function msgTextParts(msg) {
+    var parts = [];
+    if (Array.isArray(msg.content)) {
+      msg.content.forEach(function (c) { parts = parts.concat(blockStrings(c)); });
+    } else if (typeof msg.text === "string") {
+      parts.push(msg.text);
+    }
+    return parts;
+  }
+
+  /* 列表行：一个导出会话一行；检索面= 会话名 + summary + 全部消息文本 */
+  function buildConvRows(root) {
+    var rows = [];
+    root.forEach(function (c) {
+      var nHuman = 0, nBot = 0, nOther = 0, textLen = 0;
+      var hayParts = [c.name || "", c.summary || ""];
+      (c.chat_messages || []).forEach(function (msg) {
+        if (msg.sender === "human") nHuman++;
+        else if (msg.sender === "assistant") nBot++;
+        else nOther++;
+        var parts = msgTextParts(msg);
+        for (var i = 0; i < parts.length; i++) {
+          textLen += parts[i].length;
+          hayParts.push(parts[i]);
+        }
+      });
+      rows.push({
+        kind: "会话", conversation: c,
+        title: safeStr(c.name) || "（未命名会话）",
+        date: c.updated_at || c.created_at || "",
+        datems: Date.parse(c.updated_at || c.created_at || "") || 0,
+        nMsg: (c.chat_messages || []).length,
+        nHuman: nHuman, nBot: nBot, nOther: nOther,
+        textLen: textLen,
+        hay: hayParts.join(" ").toLowerCase()
+      });
+    });
+    rows.sort(function (a, b) { return b.datems - a.datems; });
+    return rows;
+  }
+
+  /* 盘点 → 统一行流：文件记忆（有 updated_at）在前按时间排，
+     项目记忆与会话记忆（无时间戳）垫后按名称排 */
+  function buildRows(root) {
+    var r = root[0];
+    var rows = [];
+    (r.memory_files || []).forEach(function (m, i) {
+      var fm = parseFM(m.content || "");
+      var name = fm.name || String(m.path || "").split("/").pop() || "条目 " + (i + 1);
+      rows.push({
+        kind: "文件记忆", title: name, path: m.path || "",
+        date: m.updated_at || "", datems: Date.parse(m.updated_at || "") || 0,
+        fm: fm, raw: m.content || "",
+        hay: (name + " " + (m.path || "") + " " + fm.description + " " +
+              fm.aliases.join(" ") + " " + fm.sources.join(" ") + " " + (m.content || "")).toLowerCase()
+      });
+    });
+    Object.keys(r.project_memories || {}).forEach(function (k) {
+      var raw = String(r.project_memories[k]);
+      rows.push({ kind: "项目记忆", title: k, path: k, date: "", datems: 0, raw: raw, hay: (k + " " + raw).toLowerCase() });
+    });
+    if (typeof r.conversations_memory === "string" && r.conversations_memory) {
+      rows.push({ kind: "会话记忆", title: "conversations_memory", path: "—", date: "", datems: 0,
+        raw: r.conversations_memory, hay: ("conversations_memory " + r.conversations_memory).toLowerCase() });
+    }
+    rows.sort(function (a, b) { return (b.datems - a.datems) || (a.kind < b.kind ? -1 : 1); });
+    return rows;
+  }
+
+  function setStat(idV, v, idS, s) {
+    var sv = $(idV);
+    sv.textContent = v;
+    $(idS).textContent = s || "";
+  }
+
+  /* ---------- 渲染：概览（按导出类型换卡面语义） ---------- */
+  function daysSpan(firstISO, lastISO) {
+    var a = Date.parse(firstISO || ""), b = Date.parse(lastISO || "");
+    if (!a || !b || b < a) return null;
+    return Math.max(1, Math.round((b - a) / 86400000));
+  }
+
+  function relabel(kA, kB, kC, kD, kE, kF) {
+    $("stkA").textContent = kA; $("stkB").textContent = kB; $("stkC").textContent = kC;
+    $("stkD").textContent = kD; $("stkE").textContent = kE; $("stkF").textContent = kF;
+    /* 首卡（会话/记忆文件）通向列表：有导出数据就标成可点 */
+    var card = $("stA").closest(".stat");
+    var linkable = !!state.rows && state.rows.length > 0;
+    card.classList.toggle("linkable", linkable);
+    card.title = linkable ? "点此进入「列表」逐条扫描" : "";
+  }
+
+  /* 首卡点击 → 列表（概览只有数字没有入口时，用户容易找不到去列表的路） */
+  $("stA").closest(".stat").addEventListener("click", function () {
+    if (state.rows && state.rows.length) showPane("list");
+  });
+
+  function renderOv() {
+    if (state.type === "conversations") return renderOvConv();
+    var r = state.root[0];
+    var files = r.memory_files || [];
+    var projKeys = Object.keys(r.project_memories || {});
+    var conv = typeof r.conversations_memory === "string" ? r.conversations_memory : "";
+    var bytes = 0;
+    files.forEach(function (m) { bytes += (m.content || "").length; });
+    var first = "", last = "";
+    files.forEach(function (m) {
+      if (!m.updated_at) return;
+      if (!first || m.updated_at < first) first = m.updated_at;
+      if (!last || m.updated_at > last) last = m.updated_at;
+    });
+    relabel("记忆文件", "项目记忆", "会话记忆", "导出大小", "最早更新", "最新更新");
+    $("ovHint").textContent = "「记忆文件」按 memory_files 个数计；时间取各文件 updated_at 的最早/最晚值。";
+    setStat("stA", String(files.length), "stAs", "合计 " + humanSize(bytes));
+    setStat("stB", String(projKeys.length), "stBs", projKeys.length ? "项目级记忆" : "无项目记忆");
+    setStat("stC", conv ? "有" : "无", "stCs", conv ? humanSize(conv.length) : "本导出未含该项");
+    setStat("stD", humanSize(state.file ? state.file.size : 0), "stDs", state.file ? state.file.name : "");
+    setStat("stE", fmtDay(first), "stEs", first ? fmtFull(first).slice(0, 16) : "");
+    setStat("stF", fmtDay(last), "stFs", last ? fmtFull(last).slice(0, 16) : "");
+  }
+
+  function renderOvConv() {
+    var rows = state.rows || [];
+    var nMsg = 0, nHuman = 0, nBot = 0, nOther = 0, textLen = 0;
+    var first = "", last = "";
+    rows.forEach(function (r) {
+      nMsg += r.nMsg; nHuman += r.nHuman; nBot += r.nBot; nOther += r.nOther;
+      textLen += r.textLen;
+      var c = r.conversation, cr = c.created_at || "", up = c.updated_at || "";
+      if (cr && (!first || cr < first)) first = cr;
+      if (up && (!last || up > last)) last = up;
+    });
+    relabel("会话", "消息", "时间跨度", "导出大小", "最早会话", "最近会话");
+    $("ovHint").textContent = "「跨度」取最早 created_at 到最近 updated_at 的天数；正文指消息里的纯文本量（不含工具输入/结果）。";
+    setStat("stA", String(rows.length), "stAs", "正文合计 " + humanSize(textLen));
+    setStat("stB", nMsg >= 10000 ? (nMsg / 10000).toFixed(1) + " 万" : String(nMsg),
+            "stBs", nMsg ? "用户 " + nHuman + " · 助手 " + nBot + (nOther ? " · 其他 " + nOther : "") : "无消息");
+    var span = daysSpan(first, last);
+    setStat("stC", span ? span + " 天" : "—", "stCs", span ? "首末差" : "");
+    setStat("stD", humanSize(state.file ? state.file.size : 0), "stDs", state.file ? state.file.name : "");
+    setStat("stE", fmtDay(first), "stEs", first ? fmtFull(first).slice(0, 16) : "");
+    setStat("stF", fmtDay(last), "stFs", last ? fmtFull(last).slice(0, 16) : "");
+  }
+
+  /* ---------- 渲染：列表（受搜索词过滤） ---------- */
+  function visibleRows() {
+    if (!state.query) return state.rows;
+    var q = state.query;
+    return state.rows.filter(function (r) { return r.hay.indexOf(q) !== -1; });
+  }
+
+  function chipLabel(kind) {
+    return kind === "文件记忆" ? "文件" : kind === "项目记忆" ? "项目" : kind === "会话记忆" ? "记忆" : "会话";
+  }
+
+  function renderList() {
+    var host = $("rows");
+    host.innerHTML = "";
+    var list = visibleRows();
+    list.forEach(function (r, i) {
+      var div = document.createElement("div");
+      div.className = "row";
+      div.setAttribute("data-idx", String(state.rows.indexOf(r)));
+      var t = document.createElement("span");
+      t.className = "t";
+      t.textContent = r.title;
+      var kc = document.createElement("span");
+      kc.className = "kc";
+      kc.textContent = chipLabel(r.kind);
+      var m = document.createElement("span");
+      m.className = "m";
+      if (r.kind === "会话" && r.nMsg) {
+        m.textContent = fmtDay(r.date) + " · " + r.nMsg + " 条";
+      } else {
+        m.textContent = r.date ? fmtDay(r.date) : r.kind;
+      }
+      div.appendChild(t); div.appendChild(kc); div.appendChild(m);
+      host.appendChild(div);
+    });
+    if (state.query && !list.length) {
+      var d = document.createElement("div");
+      d.className = "hint-line";
+      d.style.marginTop = "12px";
+      d.textContent = "没有匹配的条目——换个短一点的关键词试试。";
+      host.appendChild(d);
+    }
+  }
+
+  /* ---------- 渲染：明细（记忆条目 / 会话消息两路） ---------- */
+  function fillDet() {
+    var t = $("dTitle"), m = $("dMeta"), body = $("dBody"), gh = $("dGhost");
+    var msgsBox = $("msgs"), moreBtn = $("moreBtn");
+    if (state.sel < 0 || !state.rows[state.sel]) {
+      t.textContent = "（未选择条目）";
+      m.textContent = "先在「列表」里点开一条，明细会在这里展开。";
+      t.hidden = false; m.hidden = false;   /* 面板级标题只给未选中/记忆条目用 */
+      body.textContent = "";
+      body.hidden = false;
+      msgsBox.hidden = true; msgsBox.textContent = "";
+      naviShow(false);
+      crumbReset();
+      moreBtn.hidden = true;
+      gh.hidden = false;
+      return;
+    }
+    var r = state.rows[state.sel];
+    gh.hidden = true;
+    if (state.type === "conversations") {
+      t.hidden = true; m.hidden = true;   /* 会话标题改走消息流顶部的会话头 */
+      body.hidden = true;      /* 会话走消息容器，不走 dBody */
+      msgsBox.hidden = false;  /* 消息容器上屏（此前漏了这行，明细整块不可见） */
+      openConversation(r);
+      return;
+    }
+    msgsBox.hidden = true; msgsBox.textContent = "";
+    naviShow(false);
+    moreBtn.hidden = true;
+    crumbReset();
+    t.hidden = false; m.hidden = false;
+    if (r.kind === "文件记忆") {
+      t.textContent = r.title;
+      var bits = [r.path, r.date ? "更新 " + fmtFull(r.date) : ""];
+      if (r.fm.aliases.length) bits.push("别名: " + r.fm.aliases.join(" / "));
+      if (r.fm.description) bits.push(r.fm.description);
+      if (r.fm.sources.length) bits.push("来源: " + r.fm.sources.join(" · "));
+      m.textContent = bits.filter(Boolean).join("  ·  ");
+      body.textContent = r.fm.body;   /* 正文已剥掉 front-matter，结构信息在上一行 */
+    } else {
+      t.textContent = r.title;
+      m.textContent = r.kind + (r.path && r.path !== r.title ? " · " + r.path : "");
+      body.textContent = r.raw;
+    }
+  }
+
+  /* =========================================================
+     会话明细：消息渐进渲染
+     - 25 条一批，批间 setTimeout 放行主线程，UI 不冻结；
+     - 用户可点「加载余下」立刻续渲。
+     ========================================================= */
+  var MSG_CHUNK = 25;
+  var detQueue = null;        /* {list, at} 渲染队列 */
+
+  function stopDetRender() {
+    detQueue = null;
+  }
+
+  function openConversation(row) {
+    var c = row.conversation;
+    crumbTitleText = row.title || "（未命名会话）";   /* 顶栏面包屑起点：数据视图 - 会话标题 */
+    crumbSet(null);
+    startDetRender(c.chat_messages || []);
+  }
+
+  /* 会话元信息一行字符串：明细面板（记忆条目）与会话头共用 */
+  function convMetaBits(row) {
+    var c = row.conversation;
+    var bits = [];
+    if (c.created_at) bits.push("建 " + fmtFull(c.created_at).slice(0, 16));
+    if (c.updated_at) bits.push("新 " + fmtFull(c.updated_at).slice(0, 16));
+    bits.push(row.nMsg ? row.nMsg + " 条消息（用户 " + row.nHuman + " · 助手 " + row.nBot + (row.nOther ? " · 其他 " + row.nOther : "") + "）" : "无消息");
+    if (row.textLen) bits.push("正文 " + humanSize(row.textLen));
+    return bits.filter(Boolean).join("  ·  ");
+  }
+
+  function startDetRender(list) {
+    detQueue = { list: list, at: 0 };
+    var host = $("msgs");
+    host.hidden = false;       /* 与 fillDet 的显示动作互为保险 */
+    host.textContent = "";
+    /* 导航条重开：没用户提问的会话干脆不亮 */
+    var hasHuman = false;
+    for (var i0 = 0; i0 < list.length; i0++) {
+      if (list[i0].sender === "human") { hasHuman = true; break; }
+    }
+    naviItems = []; naviCur = -1; naviEl.textContent = ""; naviTipHide();
+    naviShow(hasHuman);
+    /* 会话头：标题 + 元信息放消息流顶部（面板级 dTitle/dMeta 对会话隐藏避免重复） */
+    var r0 = state.rows[state.sel];
+    var doingBubble = vmMode === "bubble";
+    host.classList.toggle("bubble", doingBubble);
+    var cvH = document.createElement("div");
+    cvH.className = "cv-head";
+    var cvT = document.createElement("div");
+    cvT.className = "cv-t";
+    cvT.textContent = r0.title;
+    var cvM = document.createElement("div");
+    cvM.className = "cv-m";
+    cvM.textContent = convMetaBits(r0);
+    cvH.appendChild(cvT); cvH.appendChild(cvM);
+    host.appendChild(cvH);
+    /* 摘要块排在最前面（有才显；纯净气泡模式不要它，只留问答） */
+    var sum = state.rows[state.sel].conversation.summary;
+    if (!doingBubble && sum && sum !== state.rows[state.sel].title) {
+      var sEl = document.createElement("div");
+      sEl.className = "sum";
+      sEl.textContent = sum;
+      host.appendChild(sEl);
+    }
+    moreVisible(list.length > 0);
+    scheduleChunk(list.length);
+  }
+
+  function moreVisible(needed) {
+    $("moreBtn").hidden = !needed;
+    if (needed) {
+      $("moreBtn").textContent = "加载余下（" + (detQueue ? detQueue.list.length - detQueue.at : "") + " 条未上屏）";
+    }
+  }
+
+  function scheduleChunk(total) {
+    /* 自动续渲到尾；moreBtn 只是「嫌它慢想立刻多渲一批」的手动快进 */
+    setTimeout(renderChunk, 24);
+  }
+
+  function renderChunk() {
+    if (!detQueue) return;
+    var host = $("msgs");
+    var list = detQueue.list;
+    var end = Math.min(detQueue.at + MSG_CHUNK, list.length);
+    for (; detQueue.at < end; detQueue.at++) {
+      var m0 = list[detQueue.at];
+      var mel = vmMode === "bubble" ? buildBubEl(m0) : buildMsgEl(m0, detQueue.at);
+      if (!mel) continue;   /* 气泡模式：纯工具消息（无文本正文）整条隐藏 */
+      host.appendChild(mel);
+      if (m0.sender === "human") naviAdd(m0, mel);   /* 导航条跟着分批长横线 */
+    }
+    var done = detQueue.at >= list.length;
+    moreVisible(!done);
+    if (done) {
+      detQueue = null;
+      setStatus("会话渲染完成 · " + list.length + " 条消息", false);
+      if (naviItems.length) spySoon();
+      else naviShow(false);        /* 筛完发现没有一轮用户提问 → 收掉空导航条 */
+    } else {
+      setStatus("渲染会话…" + detQueue.at + "/" + list.length, false);
+      scheduleChunk(list.length);
+    }
+  }
+
+  function buildMsgEl(msg, idx) {
+    var wrap = document.createElement("div");
+    wrap.className = "msg " + (msg.sender === "assistant" ? "assistant" : "human");
+    var mh = document.createElement("div");
+    mh.className = "mh";
+    var n = document.createElement("span"); n.textContent = "#" + (idx + 1);
+    var who = document.createElement("span"); who.className = "who";
+    who.textContent = msg.sender === "human" ? "用户" : msg.sender === "assistant" ? "助手" : (msg.sender || "未知");
+    var tt = document.createElement("span"); tt.textContent = msg.created_at ? fmtFull(msg.created_at).slice(0, 16) : "";
+    mh.appendChild(n); mh.appendChild(who); mh.appendChild(tt);
+    var atts = (msg.attachments || []).length, fls = (msg.files || []).length;
+    if (atts || fls) {
+      var aEl = document.createElement("span");
+      aEl.textContent = "📎 " + (atts ? "附件 " + atts : "") + (atts && fls ? " / " : "") + (fls ? "文件 " + fls : "");
+      mh.appendChild(aEl);
+    }
+    wrap.appendChild(mh);
+
+    if (Array.isArray(msg.content) && msg.content.length) {
+      msg.content.forEach(function (c) {
+        wrap.appendChild(blockEl(c, msg.sender));
+      });
+    } else if (typeof msg.text === "string" && msg.text) {
+      var tb = document.createElement("div");
+      if (msg.sender === "assistant" && vmMode === "md") {   /* 兜底路径（无 content 块）同样吃 Md */
+        tb.className = "d-b md";
+        tb.appendChild(mdRender(msg.text));
+      } else {
+        tb.className = "d-b";
+        tb.textContent = msg.text;
+      }
+      wrap.appendChild(tb);
+    }
+    return wrap;
+  }
+
+  /* ---------- 气泡模式构建器：一左一右，只留文本 + 时间 ---------- */
+  function bubParts(msg) {
+    var out = [];
+    if (Array.isArray(msg.content)) {
+      msg.content.forEach(function (c) {
+        if (c && typeof c === "object" && c.type === "text" && typeof c.text === "string" && c.text.trim()) out.push(c.text);
+      });
+    } else if (typeof msg.text === "string" && msg.text.trim()) out.push(msg.text);
+    return out;
+  }
+
+  function buildBubEl(msg) {
+    var parts = bubParts(msg);
+    if (!parts.join(" ").trim()) return null;   /* 只有工具调用等中间过程的消息：不做气泡 */
+    var row = document.createElement("div");
+    var isHuman = msg.sender === "human";
+    row.className = "bub-row " + (isHuman ? "human" : "bot");
+    var bub = document.createElement("div");
+    bub.className = "bub";
+    var t = document.createElement("div");
+    t.className = "bub-t";
+    t.textContent = (isHuman ? "用户" : "助手") + (msg.created_at ? " · " + fmtFull(msg.created_at).slice(0, 16) : "");
+    bub.appendChild(t);
+    var c = document.createElement("div");
+    var joined = parts.join("\n\n");
+    if (isHuman) {   /* 用户侧：纯文本；助手侧：网页版式渲染 Markdown */
+      c.className = "bub-c";
+      c.textContent = joined;
+    } else {
+      c.className = "bub-c md";
+      c.appendChild(mdRender(joined));
+    }
+    bub.appendChild(c);
+    row.appendChild(bub);
+    return row;
+  }
+
+  function blockEl(c, sender) {
+    var d0 = document.createElement("div");
+    if (c === null || c === undefined) return d0;
+    if (typeof c === "string") {
+      d0.className = "d-b";
+      if (sender === "assistant" && vmMode === "md") {
+        d0.className += " md";
+        d0.appendChild(mdRender(c));
+      } else {
+        d0.textContent = c;
+      }
+      return d0;
+    }
+    var t = c.type;
+    if (t === "text") {
+      var d = document.createElement("div");
+      d.className = "d-b";
+      var tv = typeof c.text === "string" ? c.text : "";
+      if (vmMode === "md" && sender === "assistant" && tv) {
+        d.className += " md";
+        d.appendChild(mdRender(tv));
+      } else {
+        d.textContent = tv;
+      }
+      return d;
+    }
+    if (t === "tool_use") {
+      var u = document.createElement("details");
+      u.className = "tcall";
+      var us = document.createElement("summary");
+      us.textContent = "🔧 " + (safeStr(c.name) || safeStr(c.id)) + (safeStr(c.message) ? " · " + c.message : "");
+      var ub = document.createElement("pre");
+      ub.className = "tj";
+      var input = c.input;
+      var pretty = "";
+      try { pretty = input === undefined ? "（无输入）" : JSON.stringify(input, null, 2); }
+      catch (e) { pretty = "（输入序列化失败，原文放弃展示）"; }
+      ub.textContent = truncTail(pretty, 3000);
+      u.appendChild(us); u.appendChild(ub);
+      return u;
+    }
+    if (t === "tool_result") {
+      var res = document.createElement("details");
+      res.className = "tcall";
+      var rs = document.createElement("summary");
+      var strings = [];
+      (Array.isArray(c.content) ? c.content : []).forEach(function (rc) {
+        if (typeof rc === "string") strings.push(rc);
+        else if (rc && typeof rc === "object" && typeof rc.text === "string") strings.push(rc.text);
+      });
+      var nlen = strings.join("\n").length;
+      rs.textContent = "↳ " + (safeStr(c.name) || "工具结果") + " · " + nlen + " 字符" +
+                       (c.is_error ? " · 出错" : "") + "（点开看）";
+      var rb = document.createElement("pre");
+      rb.className = "tj";
+      rb.textContent = truncTail(strings.join("\n"), 3000);
+      res.appendChild(rs); res.appendChild(rb);
+      return res;
+    }
+    /* 未具形的块：给一行折叠摘要，不贪多 */
+    var o = document.createElement("details");
+    o.className = "tcall";
+    var os = document.createElement("summary");
+    os.textContent = "📦 " + (safeStr(t) ? t : "未知块") + "（点开看结构）";
+    var ob = document.createElement("pre");
+    ob.className = "tj";
+    var j = "";
+    try { j = JSON.stringify(c, null, 2); } catch (e3) { j = "（序列化失败）"; }
+    ob.textContent = truncTail(j, 1200);
+    o.appendChild(os); o.appendChild(ob);
+    return o;
+  }
+
+  /* 展示截断：超过上限给标注；完整内容始终留在数据里，拷贝走全量转写 */
+  function truncTail(s, cap) {
+    if (s.length <= cap) return s;
+    return s.slice(0, cap) + "\n…（显示截断，全长 " + s.length + " 字符）";
+  }
+
+  /* =========================================================
+     Markdown 渲染（零依赖，DOM 全部用 createElement/textContent 组装）。
+     作用范围：Md 模式下只替换「助手消息的 text 块」；
+     检索面与拷贝转写照旧走原始文本，不受渲染影响。
+     ========================================================= */
+  var vmMode = "bubble";   /* 显示类型：bubble 纯净气泡（默认）/ md 渲染 / plain 原文 */
+
+  function setVmButtons() {
+    [].forEach.call(document.querySelectorAll("#vmodes .mini"), function (b) {
+      b.classList.toggle("on", b.getAttribute("data-vm") === vmMode);
+    });
+  }
+  setVmButtons();   /* 默认点亮「气泡」 */
+
+  function mkEl(tag, cls) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    return e;
+  }
+
+  /* 行内语法：`code` / **bold** / *italic* / [text](https://…) ；
+     其余一律 createTextNode，不喂 innerHTML */
+  function mdInline(src, host) {
+    var s = String(src);
+    var re = /(`[^`]+`)|(\*\*[^*]+\*\*)|(\*[^*\n]+\*)|(\[[^\]]+\]\([^)\s]+\))/;
+    for (;;) {
+      var m = re.exec(s);
+      if (!m) break;
+      if (m.index > 0) host.appendChild(document.createTextNode(s.slice(0, m.index)));
+      var tok = m[0];
+      if (tok.charAt(0) === "`") {
+        var ic = mkEl("code", "md-ic");
+        ic.textContent = tok.slice(1, -1);
+        host.appendChild(ic);
+      } else if (tok.slice(0, 2) === "**") {
+        var b = mkEl("strong");
+        mdInline(tok.slice(2, -2), b);
+        host.appendChild(b);
+      } else if (tok.charAt(0) === "*") {
+        var it = mkEl("em");
+        mdInline(tok.slice(1, -1), it);
+        host.appendChild(it);
+      } else {
+        var lm = /^\[([^\]]+)\]\(([^)\s]+)\)$/.exec(tok);
+        var href = lm ? lm[2] : "";
+        if (lm && /^https?:\/\//i.test(href)) {
+          var a = mkEl("a", "md-a");
+          a.href = href;
+          a.target = "_blank";
+          a.rel = "noopener noreferrer";
+          a.title = href;
+          a.textContent = lm[1];
+          host.appendChild(a);
+        } else {
+          host.appendChild(document.createTextNode(tok));
+        }
+      }
+      s = s.slice(m.index + tok.length);
+    }
+    if (s) host.appendChild(document.createTextNode(s));
+  }
+
+  function mdSplitRow(ln) {
+    return ln.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map(function (c) { return c.trim(); });
+  }
+
+  function mdRender(text) {
+    var frag = document.createDocumentFragment();
+    var lines = String(text).replace(/\r\n?/g, "\n").split("\n");
+    var i = 0, para = [], list = null;
+
+    function flushP() {
+      if (!para.length) return;
+      var p = mkEl("p", "md-p");
+      para.forEach(function (ln, ix) {
+        if (ix) p.appendChild(document.createElement("br"));
+        mdInline(ln, p);
+      });
+      frag.appendChild(p);
+      para = [];
+    }
+    function flushList() {
+      if (!list) return;
+      frag.appendChild(list.el);
+      list = null;
+    }
+
+    while (i < lines.length) {
+      var ln = lines[i];
+
+      /* 代码围栏（未闭合的吃到结尾也认） */
+      if (/^\s*```/.test(ln)) {
+        flushP(); flushList();
+        var lang = ln.replace(/^\s*```/, "").trim();
+        i++;
+        var codeLines = [];
+        while (i < lines.length && !/^\s*```/.test(lines[i])) { codeLines.push(lines[i]); i++; }
+        i++;   /* 跳过收尾围栏（没有就吃到底） */
+        var pre = mkEl("pre", "md-code");
+        if (lang) {
+          var lb = mkEl("span", "md-lang");
+          lb.textContent = lang;
+          pre.appendChild(lb);
+        }
+        var cd = mkEl("code");
+        cd.textContent = codeLines.join("\n");
+        pre.appendChild(cd);
+        frag.appendChild(pre);
+        continue;
+      }
+
+      var hM = /^(#{1,6})\s+(.*)$/.exec(ln);
+      if (hM) {
+        flushP(); flushList();
+        var h = mkEl("div", "md-h md-h" + hM[1].length);
+        mdInline(hM[2], h);
+        frag.appendChild(h);
+        i++;
+        continue;
+      }
+
+      if (/^\s*(?:-{3,}|\*{3,})\s*$/.test(ln)) {
+        flushP(); flushList();
+        frag.appendChild(mkEl("hr", "md-hr"));
+        i++;
+        continue;
+      }
+
+      if (/^\s*>\s?/.test(ln)) {
+        flushP(); flushList();
+        var qs = [];
+        while (i < lines.length && /^\s*>\s?/.test(lines[i])) {
+          qs.push(lines[i].replace(/^\s*>\s?/, ""));
+          i++;
+        }
+        var qb = mkEl("div", "md-q");
+        qs.forEach(function (ql, ix) {
+          if (ix) qb.appendChild(document.createElement("br"));
+          mdInline(ql, qb);
+        });
+        frag.appendChild(qb);
+        continue;
+      }
+
+      /* 表格：本行含 | 且下一行是 |---| 分隔行 */
+      if (ln.indexOf("|") !== -1 && i + 1 < lines.length && /^\s*\|?[\s:|-]+\|?\s*$/.test(lines[i + 1])) {
+        flushP(); flushList();
+        var tbl = mkEl("table", "md-tbl");
+        var thr = mkEl("tr");
+        mdSplitRow(ln).forEach(function (c) {
+          var th = mkEl("th");
+          mdInline(c, th);
+          thr.appendChild(th);
+        });
+        tbl.appendChild(thr);
+        i += 2;
+        while (i < lines.length && lines[i].indexOf("|") !== -1 && lines[i].trim()) {
+          var tr = mkEl("tr");
+          mdSplitRow(lines[i]).forEach(function (c) {
+            var td = mkEl("td");
+            mdInline(c, td);
+            tr.appendChild(td);
+          });
+          tbl.appendChild(tr);
+          i++;
+        }
+        frag.appendChild(tbl);
+        continue;
+      }
+
+      var uM = /^\s*[-*]\s+(.*)$/.exec(ln);
+      if (uM) {
+        flushP();
+        if (!list || list.tag !== "ul") { flushList(); list = { tag: "ul", el: mkEl("ul", "md-ul") }; }
+        var li = mkEl("li");
+        mdInline(uM[1], li);
+        list.el.appendChild(li);
+        i++;
+        continue;
+      }
+
+      var oM = /^\s*\d+[.)]\s+(.*)$/.exec(ln);
+      if (oM) {
+        flushP();
+        if (!list || list.tag !== "ol") { flushList(); list = { tag: "ol", el: mkEl("ol", "md-ol") }; }
+        var li2 = mkEl("li");
+        mdInline(oM[1], li2);
+        list.el.appendChild(li2);
+        i++;
+        continue;
+      }
+
+      if (!ln.trim()) { flushP(); flushList(); i++; continue; }
+      flushList();
+      para.push(ln);
+      i++;
+    }
+    flushP(); flushList();
+    return frag;
+  }
+
+  /* ---------- 渲染：footer 统计（N=列表行数） ---------- */
+  function renderMeta() {
+    $("mType").textContent = state.type === "conversations" ? "conversations.json" : "memories.json";
+    var n;
+    if (state.type === "conversations") {
+      n = state.rows.length;
+    } else {
+      n = (state.root[0].memory_files || []).length;
+      n += Object.keys(state.root[0].project_memories || {}).length;
+      if (typeof state.root[0].conversations_memory === "string" && state.root[0].conversations_memory) n++;
+    }
+    $("mN").textContent = String(n);
+    $("mBytes").textContent = state.file ? humanSize(state.file.size) : "—";
+    $("metaRow").hidden = false;
+  }
+
+  function renderAll() {
+    stopDetRender();
+    state.rows = state.type === "conversations" ? buildConvRows(state.root) : buildRows(state.root);
+    state.query = "";
+    state.sel = -1;
+    $("q").value = "";
+    $("q").disabled = false;
+    $("qBtn").disabled = false;
+    renderOv();
+    renderList();
+    renderMeta();
+    fillDet();   /* 复位明细区（含会话消息容器） */
+  }
+
+  /* =========================================================
+     状态与文件入口
+     ========================================================= */
+  var state = { file: null, root: null, rows: null, query: "", sel: -1, type: null };
+  /* 类型灯不参与真伪判定，只做视觉反馈 */
+
+  /* busy 遮罩（两级制铁律）：>512KB 才动用；显出在 readAsText 发起前，
+     失败路径同样熄灭；12MB 级解析拆成「读 → 解析 → 建索引」三段，
+     段间 setTimeout 放一拍，让遮罩文案至少刷得动 */
+  function showBusy(t) { $("busyText").textContent = t; $("busy").hidden = false; }
+  function hideBusy() { $("busy").hidden = true; }
+  function tick() { return new Promise(function (res) { setTimeout(res, 26); }); }
+
+  function loadFile(f) {
+    if (!f) return;
+    if (f.size > 128 * 1048576) { setStatus("文件超过 128MB——不是正常的记忆/会话导出", true); return; }
+    markChips(f.name);
+    setStatus("读取文件…", false);
+    var heavy = f.size > 512 * 1024;
+    if (heavy) showBusy("读取 " + humanSize(f.size) + " …");
+    var fr = new FileReader();
+    fr.onerror = function () {
+      hideBusy();
+      setStatus("文件读不出来，重试一次", true);
+    };
+    fr.onload = function () {
+      var txt = String(fr.result || "");
+      tick().then(function () {
+        if (heavy) showBusy("解析 JSON（" + humanSize(f.size) + "）…");
+        return tick();
+      }).then(function () {
+        var root = null, err = null;
+        try { root = JSON.parse(txt); } catch (e) { err = jsonErr(e, txt); }
+        txt = null;                     /* 解析完立刻撒手，峰值内存减半 */
+        var type = root === null ? null : detect(root);
+        if (!type) {
+          hideBusy();
+          setStatus(err ? "JSON 解析失败：" + err :
+                          "顶层结构不认识——单元素数组 + memory_files / 多会话 + chat_messages 都不是，两种导出都对不上", true);
+          return;
+        }
+        state.file = f;
+        state.root = root;
+        state.type = type;
+        $("slotIc").textContent = type === "conversations" ? "💬" : "🧠";
+        $("slotName").textContent = f.name;
+        $("slotMeta").textContent = humanSize(f.size) + " · " + (type === "conversations" ? "conversations 布局" : "memories 布局");
+        $("slot").classList.add("filled");
+        return tick().then(function () {
+          if (heavy) showBusy("建索引（列表 + 全文检索面）…");
+          return tick();
+        }).then(function () {
+          renderAll();
+          hideBusy();
+          var n = state.rows.length;
+          setStatus("解析完成 · " + n + (type === "conversations" ? " 个会话" : " 个条目") +
+                    " · 在「列表」搜索或点开看明细", false);
+          showPane("ov");
+        });
+      });
+    };
+    fr.readAsText(f);
+  }
+
+  $("openBtn").addEventListener("click", function () { $("filePick").click(); });
+  $("slot").addEventListener("click", function () { $("filePick").click(); });
+  $("filePick").addEventListener("change", function () {
+    openPick(this.files[0]);
+    this.value = "";   /* 清掉选择，下次还能再选同一个文件 */
+    this.blur();
+  });
+  function openPick(f) { loadFile(f); }
+
+  var hasFiles = function (e) {
+    var t = e.dataTransfer && e.dataTransfer.types, i;
+    if (!t) return false;
+    for (i = 0; i < t.length; i++) if (t[i] === "Files") return true;
+    return false;
+  };
+  var slot = $("slot");
+  ["dragenter", "dragover"].forEach(function (ev) {
+    document.addEventListener(ev, function (e) {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      slot.classList.add("dragover");
+      $("openBtn").classList.add("flash");
+    });
+  });
+  document.addEventListener("dragleave", function (e) {
+    if (!e.relatedTarget) { slot.classList.remove("dragover"); $("openBtn").classList.remove("flash"); }
+  });
+  document.addEventListener("drop", function (e) {
+    slot.classList.remove("dragover");
+    $("openBtn").classList.remove("flash");
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    var f = e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f) loadFile(f);
+  });
+  window.addEventListener("blur", function () { slot.classList.remove("dragover"); $("openBtn").classList.remove("flash"); });
+
+  /* ---------- 类型灯（展示层）：文件名点亮对应行，解析里不承担真伪 ---------- */
+  function markChips(name) {
+    var n = String(name || "").toLowerCase();
+    var hit = null;
+    if (n.indexOf("memories.json") !== -1) hit = "memories";
+    else if (n.indexOf("conversations.json") !== -1) hit = "conversations";
+    [].forEach.call(document.querySelectorAll(".fchip"), function (el) {
+      el.classList.toggle("hit", hit !== null && el.getAttribute("data-target") === hit);
+    });
+  }
+
+  /* ---------- 视图切换 ---------- */
+  var PANES = { ov: "paneOv", list: "paneList", det: "paneDet" };
+  /* 视图钮的可用性/点亮统一从这里走：启动一次（全禁点、无高亮），之后每次 showPane 同步 */
+  function vnavState(v) {
+    var canNav = !!state.rows;
+    [].forEach.call($("vseg").children, function (b) {
+      var dv = b.getAttribute && b.getAttribute("data-v");
+      b.disabled = !canNav;
+      if (dv) b.classList.toggle("on", canNav && dv === v);
+    });
+  }
+  function showPane(v) {
+    /* 视图钮可用性随数据在位与否：没载入导出前两钮禁点且不高亮；
+       明细不再有按钮——进入明细的唯一路径是列表里点行 */
+    vnavState(v);
+    var canSz = !!state.rows && v === "det";
+    $("szDown").disabled = !canSz;
+    $("szUp").disabled = !canSz;
+    $("szReset").disabled = !canSz;
+    $("cpBtn").disabled = !(canSz && state.sel >= 0);   /* 没选中条目时连拷贝也不给点 */
+    var canVm = canSz && state.sel >= 0 && state.type === "conversations";   /* 显示类型只在会话明细有意义 */
+    ["plain", "md", "bubble"].forEach(function (m) {
+      var b = document.querySelector("#vmodes .mini[data-vm=\"" + m + "\"]");
+      if (b) b.disabled = !canVm;
+    });
+    $("actBar").hidden = v !== "det";   /* 字号/拷贝/宽滑杆只归属明细页：其他页整排不显示 */
+    if (v !== "det") { naviShow(false); crumbReset(); }   /* 离开明细页同时收掉左缘导航条与面包屑 */
+    if (!state.rows) {
+      ["paneOv", "paneList", "paneDet"].forEach(function (id) { $(id).hidden = true; });
+      $("empty").hidden = false;
+      $("emptyText").textContent = "先在左栏打开导出文件，三个视图才有内容。";
+      return;
+    }
+    ["paneOv", "paneList", "paneDet"].forEach(function (id) { $(id).hidden = id !== PANES[v]; });
+    $("empty").hidden = true;
+    if (v === "det") fillDet();
+    if (v === "list") renderList();
+    syncWmod();   /* 宽度滑杆/footer 宽度位随「会话明细 × 气泡模式」显隐 */
+  }
+  $("vseg").addEventListener("click", function (e) {
+    /* 按钮里大半是 <small> 述行，点它时 e.target 没带 data-v——
+       必须沿祖先找 .vitem 再取 data-v，否则点半截没反应 */
+    var t = e.target && e.target.closest && e.target.closest(".vitem");
+    var v = t && t.getAttribute("data-v");
+    if (v) showPane(v);
+  });
+
+  /* ---------- 清单交互：搜索过滤 / 行点开明细 / 明细回列表 ---------- */
+  $("q").addEventListener("input", function () {
+    state.query = this.value.trim().toLowerCase();
+    renderList();
+    setStatus(state.query ? "搜索“" + this.value + "”：命中 " + visibleRows().length + " 条" : "已清空搜索", false);
+  });
+  $("qBtn").addEventListener("click", function () {
+    setStatus(state.query ? "搜索“" + state.query + "”：命中 " + visibleRows().length + " 条" : "输入关键词再搜", state.query === "");
+  });
+  $("rows").addEventListener("click", function (e) {
+    var row = e.target && e.target.closest && e.target.closest(".row");
+    if (!row) return;
+    state.sel = +row.getAttribute("data-idx");
+    fillDet();
+    showPane("det");
+  });
+  $("backBtn").addEventListener("click", function () { showPane("list"); });
+
+  /* ---------- 加载余下（手动快进一步）---------- */
+  $("moreBtn").addEventListener("click", function () {
+    if (detQueue) renderChunk();   /* 手动快进一步 */
+  });
+
+  /* ---------- 显示类型切换：原文 / Markdown / 纯净气泡（默认） ---------- */
+  [].forEach.call(document.querySelectorAll("#vmodes .mini"), function (b) {
+    b.addEventListener("click", function () {
+      var m = b.getAttribute("data-vm");
+      if (!m || m === vmMode) return;
+      vmMode = m;
+      setVmButtons();
+      syncWmod();   /* 滑杆/footer 宽度位跟随模式显隐 */
+      if (state.type !== "conversations" || state.sel < 0) return;
+      startDetRender(state.rows[state.sel].conversation.chat_messages || []);
+      setStatus({
+        plain: "原文模式：未渲染的 Markdown 源码（保留工具调用等中间过程）",
+        md: "Md 模式：助手回复文本渲染 Markdown（保留工具调用等中间过程）",
+        bubble: "气泡模式：纯净问答 + 时间（工具调用等中间过程已隐藏）"
+      }[m], false);
+    });
+  });
+
+  /* ---------- 助手回复内容宽度：滑杆（默认 768px，拉到最右＝全宽）----------
+     显隐条件：「会话明细 × 气泡模式」——其他页面/模式不出现；
+     footer 的「宽」位同步显示当前生效宽度，拖动即刷，进场即显 */
+  var BOT_MAX = 1520;
+  var botWVal = 768;
+
+  function applyBotCol() {
+    document.documentElement.style.setProperty("--botCol", botWVal >= BOT_MAX ? "100%" : botWVal + "px");
+    footBotW();
+  }
+
+  function footBotW() {
+    $("botWStatus").textContent = botWVal >= BOT_MAX ? "全宽" : botWVal + "px";
+  }
+
+  /* 滑杆与宽度读数同批显隐：都住在 footer 的「宽」位（botWWrap）里，
+     「conversations 明细 × 气泡」才可见；显示类型切换不动任何地盘 */
+  function syncWmod() {
+    var show = !!state.rows && state.type === "conversations" && state.sel >= 0 &&
+               !$("paneDet").hidden && vmMode === "bubble";
+    $("botWWrap").hidden = !show;
+    $("paneDet").classList.toggle("vm-bubble", show);   /* 阅读列限宽居中，只在气泡态生效 */
+    if (show) footBotW();
+    if (!naviEl.hidden) naviMeasure();   /* 类切换改变 .detail 左缘——进场时导轨可能在类生效前就已量位，这里补正 */
+  }
+
+  $("botW").addEventListener("input", function () {
+    botWVal = +this.value;
+    applyBotCol();
+    if (!naviEl.hidden) naviMeasure();   /* 列宽/列缘在拖动中实时变化，导轨跟着列走 */
+  });
+  applyBotCol();
+  applyBotCol();
+
+  /* ---------- 明细字号快捷键（仅本页；不持久化——每回打开都是真默认，
+     避免「上次调过的值被当成默认值」的错觉） ---------- */
+  var DBASE_MIN = 12, DBASE_MAX = 24, DBASE_DEF = 14;
+  var dbase = DBASE_DEF;
+  function dsizeApply(v) {
+    dbase = v;
+    document.documentElement.style.setProperty("--dbase", v + "px");
+    $("szStatus").textContent = v + "px";   /* 字号常显在 footer 左侧 meta 行（不占右侧瞬时提示位） */
+  }
+  /* 120ms 节流：连点防叠步；1px 步径避免半像素字号 */
+  var lastSzClick = 0;
+  $("szDown").addEventListener("click", function () {
+    var n = Date.now();
+    if (n - lastSzClick < 120) return;
+    lastSzClick = n;
+    dsizeApply(Math.max(DBASE_MIN, dbase - 1));
+  });
+  $("szUp").addEventListener("click", function () {
+    var n = Date.now();
+    if (n - lastSzClick < 120) return;
+    lastSzClick = n;
+    dsizeApply(Math.min(DBASE_MAX, dbase + 1));
+  });
+  $("szReset").addEventListener("click", function () {
+    dsizeApply(DBASE_DEF);   /* 不占节流窗口；重置就是一步回默认 */
+  });
+  dsizeApply(DBASE_DEF);
+
+  /* ---------- 拷贝正文：只带 #dBody 的内容，元信息（标题/meta 行）一律不进剪贴板 ---------- */
+  function legacyCopy(t, done) {
+    var ta = document.createElement("textarea");
+    ta.value = t;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    var ok = false;
+    try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+    document.body.removeChild(ta);
+    done(ok);
+  }
+  function copyText(t, done) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(t).then(function () { done(true); }, function () { legacyCopy(t, done); });
+    } else {
+      legacyCopy(t, done);
+    }
+  }
+  $("cpBtn").addEventListener("click", function () {
+    if (state.sel < 0 || !state.rows[state.sel]) return;
+    var txt = state.type === "conversations"
+      ? convTranscript(state.rows[state.sel].conversation)
+      : $("dBody").textContent;
+    if (!txt) { setStatus("这条没有正文可拷贝", true); return; }
+    copyText(txt, function (ok) {
+      setStatus(ok ? "已拷贝" + (state.type === "conversations" ? "会话转写" : "正文") + "（" + txt.length + " 字符）" : "拷贝失败——剪贴板被浏览器拦下了", !ok);
+      if (ok) flashCopied();
+    });
+  });
+
+  /* 会话拷贝 = 全量纯文本转写：text 块原样，工具块一行摘要；
+     显示端截断不影响这里（转写直接取自数据） */
+  function convTranscript(c) {
+    var out = [];
+    (c.chat_messages || []).forEach(function (msg) {
+      var who = msg.sender === "human" ? "用户" : msg.sender === "assistant" ? "助手" : (msg.sender || "未知");
+      var parts = [];
+      if (Array.isArray(msg.content)) {
+        msg.content.forEach(function (cb) {
+          if (cb && typeof cb === "object" && cb.type === "tool_use") {
+            parts.push("……[工具调用 " + (safeStr(cb.name) || "无名称") + "）");
+          } else if (cb && typeof cb === "object" && cb.type === "tool_result") {
+            parts.push("……[工具结果 " + (safeStr(cb.name) || "") + (cb.is_error ? " · 出错" : "") + "）");
+          } else {
+            blockStrings(cb).forEach(function (s) { parts.push(s); });
+          }
+        });
+      } else if (typeof msg.text === "string") {
+        parts.push(msg.text);
+      }
+      if (parts.length) out.push("[" + who + "]\n" + parts.join("\n"));
+    });
+    var name = safeStr(c.name) || "（未命名会话）";
+    var head = name + "（" + ((c.chat_messages || []).length) + " 条消息）";
+    return head + "\n\n" + out.join("\n\n");
+  }
+  /* 拷贝成功的视觉回馈：.detail 边框转主题绿 + 光晕扩散脉冲；0.9s 后收回。
+     收回用 setTimeout 兜底而非 animationend——后台/暂停标签页动画时钟不可靠 */
+  var detPane = $("paneDet");
+  var cpTimer = 0;
+  function flashCopied() {
+    var d = detPane.querySelector(".detail");
+    if (!d) return;
+    d.classList.remove("copied");
+    void d.offsetWidth;          /* 强制回流，连点也能重启动画 */
+    d.classList.add("copied");
+    clearTimeout(cpTimer);
+    cpTimer = setTimeout(function () { d.classList.remove("copied"); }, 900);
+  }
+
+  /* =========================================================
+     会话导航条（仿 DeepSeek）：一横线 = 一轮用户提问。
+     - 位置策略：挂在 .column.right 上做视口锚定，不随 .view
+       内容滚动；竖向实时框在钉住明细条之下的可视带。
+     - 悬停 → #naviTip 浮出提问正文（JS 定位；rail 自身要
+       overflow 滚动，贴伪元素会被裁掉，所以用独立节点）。
+     - 点按 → 平滑滚到该消息，落点避开钉住的明细条高度。
+     - 滚动 spy → 从当前指针向两侧步进找「最后越过参考线的
+       提问」，代价摊平，长会话也不做全量扫描。
+     ========================================================= */
+  var naviEl = $("navi"), naviTip = $("naviTip");
+  var viewEl = document.querySelector(".view");
+  var naviItems = [];    /* {el: 消息节点, dash, tip, n} */
+  var naviCur = -1;
+  var spyPend = false;
+
+  function naviShow(on) {
+    naviEl.hidden = !on;
+    detPane.classList.toggle("navi-on", on);   /* 明细窗格给导航条让出左缘走道 */
+    naviTipHide();
+    if (on) naviMeasure();
+  }
+
+  /* 几何校正：明细条/窗格的实时矩形 → 导航条的 top/left/height。
+     窗口缩放、明细条换行都会经这里重算；
+     left 贴 .detail 列左缘（气泡模式下列居中限宽，导轨随之走位，
+     而不再死贴窗格——窗格左右还有大片空白） */
+  function naviMeasure() {
+    if (naviEl.hidden) return;
+    var colB = naviEl.parentElement.getBoundingClientRect();
+    var vb = viewEl.getBoundingClientRect();
+    var db = detPane.querySelector(".detail").getBoundingClientRect();
+    /* DeepSeek 式中线安放：导轨按内容自然高先成盒（上限受滚动区高度钳制），
+       然后把盒中点放在「对话显示区中线」——提问轮数少时整串悬在中央，
+       轮数多到放不下时上下横向贴满并转入内部滚动（naviDashGap 压缩间距） */
+    var availH = (vb.bottom - colB.top) - 36;   /* 上下各留呼吸 */
+    var n = naviItems.length;
+    var natural = n < 2 ? 8 : n * 4 + (n - 1) * 8;
+    var h = Math.max(140, Math.min(natural, availH));
+    naviEl.style.height = h + "px";
+    var top = Math.max(18, ((vb.top + vb.bottom) / 2 - colB.top) - h / 2);   /* 中点=滚动区矩形中点（col-head 不计入） */
+    naviEl.style.top = top + "px";
+    naviDashGap();   /* 高度刚变过，行距按新 clientHeight 立刻重压 */
+    naviEl.style.left = Math.max(2, db.left - colB.left - 38) + "px";
+  }
+
+  /* 行距自适应：横线多时把 row-gap 压到 3px 下限，再多就让
+     导航条内部滚动（滚动时靠 setActive 把活动横线带回视野） */
+  function naviDashGap() {
+    var n = naviItems.length, H = naviEl.clientHeight;
+    if (n < 2) { naviEl.style.setProperty("--ngap", "10px"); return; }
+    var gap = (H - 4 - n * 4) / (n - 1);
+    gap = Math.max(3, Math.min(10, gap));
+    naviEl.style.setProperty("--ngap", gap.toFixed(2) + "px");
+  }
+
+  function naviAdd(msg, el) {
+    var d = document.createElement("div");
+    d.className = "navi-d";
+    d.setAttribute("role", "button");
+    d.setAttribute("aria-label", "第 " + (naviItems.length + 1) + " 轮提问");
+    var tip = msgTextParts(msg).join("\n").replace(/\n{3,}/g, "\n\n");
+    if (tip.length > 400) tip = tip.slice(0, 400) + "\n…（显示截断）";
+    if (!tip.trim()) tip = "（这轮提问没有文本正文）";
+    var it = { el: el, dash: d, tip: tip, n: naviItems.length + 1 };
+    d.addEventListener("click", function () { naviGoto(it); });
+    d.addEventListener("keydown", function (e) {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); naviGoto(it); }
+    });
+    d.addEventListener("pointerenter", function () {
+      naviTipShow(it);
+      naviSpy();   /* 悬停即对齐：后台/被冻结的页面也不受影响 */
+    });
+    d.addEventListener("pointerleave", naviTipHide);
+    naviEl.appendChild(d);
+    naviItems.push(it);
+    naviDashGap();
+    spySoon();
+  }
+
+  function naviGoto(it) {
+    /* 点击即点亮（DeepSeek 语义），spy 随滚动继续托管后续更新；
+       页尾被滚动钳制时，目标这轮也不用把高亮让给上一轮 */
+    naviSetActive(naviItems.indexOf(it));
+    var v = viewEl;
+    var top = Math.max(0, it.el.getBoundingClientRect().top - v.getBoundingClientRect().top + v.scrollTop - 40);
+    var before = v.scrollTop;
+    try { v.scrollTo({ top: top, behavior: "smooth" }); } catch (e) { v.scrollTop = top; }
+    /* 无动画环境兜底（隐藏/暂停标签页里 smooth 会冻结）：
+       一查零位移直落；二查「动过但停摆」——再对比一次没变化且未到目标也直落 */
+    setTimeout(function () {
+      if (v.scrollTop === before && before !== top) v.scrollTop = top;
+    }, 160);
+    setTimeout(function () {
+      var st = v.scrollTop;
+      if (Math.abs(st - top) <= 2) return;
+      setTimeout(function () {
+        if (v.scrollTop === st) v.scrollTop = top;   /* 停摆：动画环境丢了，瞬移收尾 */
+      }, 240);
+    }, 320);
+    spySoon();   /* 目的地就在顶上等不触发 scroll 事件时也刷一次 */
+  }
+
+  function naviTipShow(it) {
+    if (naviEl.hidden) return;
+    var colB = naviEl.parentElement.getBoundingClientRect();
+    var vb = viewEl.getBoundingClientRect();
+    var db = it.dash.getBoundingClientRect();
+    naviTip.textContent = "";
+    var h = document.createElement("div");
+    h.className = "tn";
+    h.textContent = "Q" + it.n + " · 用户提问";
+    naviTip.appendChild(h);
+    var b = document.createElement("div");
+    b.textContent = it.tip;
+    naviTip.appendChild(b);
+    naviTip.hidden = false;
+    /* 先摆位再按已量出的尺寸夹进可视范围 */
+    var x = db.right - colB.left + 12;
+    x = Math.max(4, Math.min(x, colB.width - naviTip.offsetWidth - 8));
+    var yMid = db.top + db.height / 2 - colB.top;
+    var y = Math.max(4, Math.min(yMid - naviTip.offsetHeight / 2, (vb.bottom - colB.top) - naviTip.offsetHeight - 6));
+    naviTip.style.left = x + "px";
+    naviTip.style.top = y + "px";
+  }
+
+  function naviTipHide() { naviTip.hidden = true; }
+
+  function spySoon() {
+    if (spyPend) return;
+    spyPend = true;
+    var run = function () {
+      if (!spyPend) return;
+      spyPend = false;
+      if (!naviEl.hidden) naviSpy();
+    };
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(run);
+    setTimeout(run, 120);   /* rAF 被冻结的标签页兜底：两个通道先到先执行 */
+  }
+
+  function naviSpy() {
+    var items = naviItems;
+    if (!items.length) return;
+    if (viewEl.scrollTop + viewEl.clientHeight >= viewEl.scrollHeight - 4) {
+      /* 页尾封顶：最后一段已在读，直接点亮最后一轮（DeepSeek 同款） */
+      naviSetActive(items.length - 1);
+      return;
+    }
+    var ref = naviRefY();
+    var i = naviCur;
+    if (i < 0 || i >= items.length) i = 0;
+    while (i < items.length - 1 && items[i + 1].el.getBoundingClientRect().top < ref) i++;
+    while (i > 0 && items[i].el.getBoundingClientRect().top >= ref) i--;
+    naviSetActive(i);
+  }
+
+  function naviRefY() {
+    /* 参考线：滚动区顶缘放 40px——消息顶缘越过这里即「正在看这轮」
+       （旧值贴钉住的控制条下缘，控制条废除后直接对滚动区顶缘取值） */
+    return viewEl.getBoundingClientRect().top + 40;
+  }
+
+  function naviSetActive(i) {
+    if (i === naviCur) return;
+    if (naviCur >= 0 && naviItems[naviCur]) naviItems[naviCur].dash.classList.remove("act");
+    naviCur = i;
+    var d = naviItems[i].dash;
+    d.classList.add("act");
+    crumbSet(naviItems[i].tip);   /* 面包屑提问段与高亮轮同步：进场第一轮 / 滚动跟随 / 点选都走这里 */
+    /* 导航条自身溢出滚动时，把活动横线带回视野 */
+    var t = d.offsetTop - naviEl.scrollTop;
+    if (t < 2) naviEl.scrollTop = Math.max(0, d.offsetTop - 20);
+    else if (t > naviEl.clientHeight - 6) naviEl.scrollTop = d.offsetTop - naviEl.clientHeight + 16;
+  }
+
+  viewEl.addEventListener("scroll", spySoon, { passive: true });
+  /* 页面从后台切回前台：冻结期间漏掉的滚动位置补一次对齐 */
+  document.addEventListener("visibilitychange", function () {
+    if (!document.hidden) spySoon();
+  });
+  window.addEventListener("resize", function () { naviMeasure(); naviDashGap(); });
+
+  /* =========================================================
+     面包屑（右列顶栏）：数据视图 - 会话标题 [ - 用户提问 ]。
+     - 会话标题：点开会话后固定显示；提问段与导航条高亮轮
+       同步（进场的默认首轮 / 滚动跟随 / 横线点选都有效）。
+     - 提问过长：120 字符处截断补省略号，链条整体超宽时由
+       CSS text-overflow 在尾部继续省略，不挤压动作按钮。
+     ========================================================= */
+  var crumbEl = $("crumb");
+  var backBtnEl = $("backBtn");   /* 返回钮常驻引用：crumb 重建会 detach 它，但对象不丢 */
+  var crumbTitleText = "";
+
+  function crumbReset() {
+    crumbTitleText = "";
+    crumbEl.hidden = true;
+    crumbEl.textContent = "";
+  }
+
+  function crumbSet(questionOverride) {
+    if (!crumbTitleText) { crumbEl.hidden = true; crumbEl.textContent = ""; return; }
+    crumbEl.hidden = false;
+    crumbEl.textContent = "";
+    /* 返回钮住面包屑链条最左（.ct 左侧）：随面包屑显隐，点击即回列表 */
+    crumbEl.appendChild(backBtnEl);
+    var mkS = function (cls, v) {
+      var s = document.createElement("span");
+      s.className = cls;
+      s.textContent = v;
+      crumbEl.appendChild(s);
+    };
+    mkS("cs", "-");
+    mkS("ct", crumbTitleText);
+    if (questionOverride) {
+      var q = String(questionOverride).replace(/\s+/g, " ").trim();
+      if (q.length > 120) q = q.slice(0, 120) + "…";
+      mkS("cs", "-");
+      mkS("cq", q);
+    }
+  }
+
+  /* ---------- 启动 ---------- */
+  vnavState(null);   /* 开机：未载入数据，视图钮全禁点、无高亮 */
+})();
+</script>
+</body>
+</html>
