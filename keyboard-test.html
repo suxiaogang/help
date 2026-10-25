@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>按键测试</title>
+  <meta name="description" content="键盘按键可视化检测：按下即点亮、描边记录已测按键、纯前端不上传" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23171c24'/%3E%3Ctext x='16' y='23' font-size='18' font-weight='bold' font-family='ui-monospace,Menlo,monospace' fill='%233dd68c' text-anchor='middle'%3E%3E_%3C/text%3E%3C/svg%3E" />
+  <style>
+    :root {
+      --bg: #0e1116;
+      --panel: #171c24;      /* 卡片 */
+      --panel-2: #1e2632;    /* 按钮/键帽底 */
+      --border: #2a3340;
+      --text: #e8edf4;
+      --muted: #8b97a8;
+      --accent: #3dd68c;     /* 主题绿 */
+      --accent-2: #2bb673;   /* hover/按下深绿 */
+      --warn: #ffb340;
+      --radius: 10px;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+              "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--bg); color: var(--text);
+      font: 13px/1.6 var(--sans);
+      min-height: 100vh;
+      display: flex; flex-direction: column;
+    }
+    header {
+      display: flex; align-items: baseline; gap: 14px;
+      padding: 14px 22px; border-bottom: 1px solid var(--border);
+    }
+    header h1 { font-size: 16px; font-weight: 600; margin: 0; }
+    header .hint { color: var(--muted); font-size: 12px; }
+    .wrap { width: min(1240px, 100%); margin: 0 auto; padding: 18px 22px 30px; }
+    .sub { color: var(--muted); font-size: 12.5px; margin: 0 0 14px; }
+    .card {
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 14px 16px; margin-bottom: 14px;
+    }
+    .card-title {
+      display: flex; align-items: center; justify-content: space-between; gap: 10px;
+      font-size: 11px; font-weight: 600; letter-spacing: .5px; color: var(--muted);
+      margin-bottom: 10px;
+    }
+    .mini {
+      font: 600 11px var(--sans); color: var(--text);
+      background: var(--panel-2); border: 1px solid var(--border);
+      border-radius: 7px; padding: 4px 10px; cursor: pointer;
+    }
+    .mini:hover { border-color: var(--accent-2); }
+    .mini.on { background: var(--accent); border-color: var(--accent-2); color: #062315; }
+    .mini-group { display: flex; gap: 6px; }
+
+    /* ---- 实时状态条 ---- */
+    .live { display: flex; gap: 14px; align-items: stretch; flex-wrap: wrap; }
+    .live .big { flex: 1 1 300px; min-width: 240px; }
+    .live .big .kname {
+      font: 650 25px/1.3 var(--mono); color: var(--text);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .live .big .kcode { font: 11px var(--mono); color: var(--muted); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .live .meter { flex: 0 0 auto; width: 240px; display: flex; flex-direction: column; justify-content: center; gap: 7px; }
+    .meter .mt { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--muted); }
+    .meter .mt b { color: var(--text); font-family: var(--mono); font-weight: 600; }
+    .meter .bar { height: 7px; border-radius: 4px; background: var(--panel-2); overflow: hidden; }
+    .meter .bar i { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 4px;
+                    transition: width .2s ease; }
+    .meter .down { font-size: 10.5px; color: var(--muted); }
+    .meter .down b { color: var(--warn); font-family: var(--mono); }
+
+    /* ---- 键盘 ---- */
+    .kbbox { overflow-x: auto; padding: 2px; }
+    .kb { display: flex; gap: 12px; width: max-content; margin: 0 auto; }
+    .block { display: flex; flex-direction: column; gap: 4px; flex: 0 0 auto; }
+    .block.numpad { display: grid; grid-template-columns: repeat(4, var(--u));
+                    grid-template-rows: repeat(5, var(--kh)); gap: 4px; }
+    .krow { display: flex; gap: 4px; height: var(--kh); }
+    .k {
+      position: relative; flex: 0 0 auto;
+      min-width: 12px;
+      background: var(--panel-2); border: 1px solid var(--border);
+      border-radius: 7px;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      line-height: 1.15; user-select: none;   /* 只测物理键盘，鼠标点按无效 */
+      transition: background .07s, border-color .07s, transform .07s;
+    }
+    .k[style] { width: calc(var(--u) * var(--kw) - 4px); }   /* 行式键宽；占位符无 style 例外 */
+    .k .lab { font-size: var(--lf, 10.5px); font-weight: 600; color: var(--text); overflow: hidden;
+              text-align: center; }
+    /* 标签行块：每行一个 .gl 块级元素，显式拆行（由 DOM 结构保证，不赌折行算法）、行距统一，
+       双行字块整体随 .k 的 flex 垂直居中——顶部图形与底部字的上下余白天然对称 */
+    .k .gl { line-height: 1.15; text-align: center; white-space: nowrap; }
+    /* 1.25u 底排修饰键独立小字号（--lfs 按 Command 8 字宽反推）：
+       u 足够大时天生装得下；再窄由 JS 逐标签缩放兜底 */
+    .k.mod .lab { font-size: var(--lfs, 9px); }
+    .k .led { position: absolute; top: 4px; right: 5px; width: 5.5px; height: 5.5px; border-radius: 50%;
+              background: var(--border); transition: background .08s; }
+    .k.pressed {
+      background: var(--accent); border-color: var(--accent-2);
+      box-shadow: inset 0 1px 3px rgba(0, 0, 0, .3); transform: translateY(1px);
+    }
+    .k.pressed .lab { color: #062315; }
+    .k.pressed .led { background: #062315; }
+    .k.hits { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent-2); }
+    .k.hits .led { background: var(--accent); }
+    /* fn 幽灵键：硬件层按键，浏览器收不到，摆个样子但不可点 */
+    .k.ghost { opacity: .45; cursor: default; }
+    /* 轻微 hover 提亮：与按下绿区分，ghost 不响应 */
+    .k:hover:not(.ghost):not(.pressed) {
+      background: #232d3b;
+      border-color: #39455a;
+    }
+    /* 透明占位：Esc 后的间隔与导航区箭头行的两侧空位 */
+    .krow .fill { width: calc(var(--u) * var(--kw) - 4px); flex: 0 0 auto; }
+    /* 未知键仓：当前布局之外的码——媒体键、各国布局差异键（JS 收集） */
+    .unknown { display: flex; gap: 6px; align-items: center; min-height: 30px; margin-top: 12px; flex-wrap: wrap; }
+    .unknown .ukl { font-size: 10.5px; color: var(--muted); flex: 0 0 auto; }
+    .unknown .uk {
+      font: 600 10px var(--mono); color: var(--text);
+      background: var(--panel-2); border: 1px solid var(--border);
+      border-radius: 6px; padding: 3px 8px; white-space: nowrap;
+      transition: background .06s;
+    }
+    .unknown .uk.lit { background: var(--accent); color: #062315; border-color: var(--accent-2); }
+
+    .hint-line { font-size: 11.5px; color: var(--muted); margin: 12px 0 0; }
+    .hint-line b { color: var(--text); font-weight: 600; }
+    .hint-line code { font-family: var(--mono); color: var(--text); font-size: 10.5px; }
+
+    footer {
+      margin-top: auto; border-top: 1px solid var(--border);
+      padding: 10px 22px; display: flex; align-items: center; gap: 9px;
+      color: var(--muted); font-size: 12px;
+    }
+    footer .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); flex: 0 0 auto; }
+    #statusText b { color: var(--text); font-family: var(--mono); font-weight: 600; }
+
+    @media (max-width: 560px) {
+      .live .meter { width: 100%; }
+      header { flex-wrap: wrap; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>⌨️ 按键测试</h1>
+    <span class="hint">本地检测键盘按键：点亮即验证，不上传任何数据</span>
+  </header>
+
+  <div class="wrap">
+    <p class="sub">按下物理键盘的任意键，对应键帽点亮；松开回弹并留下绿色描边——描边不亮的那颗就是死键。全部点亮即无坏键。</p>
+
+    <div class="card">
+      <div class="card-title">
+        <span>实时状态</span>
+        <button class="mini" id="resetBtn" type="button">重置计数</button>
+      </div>
+      <div class="live">
+        <div class="big">
+          <div class="kname" id="lastName">—</div>
+          <div class="kcode" id="lastCode">还没有按键记录</div>
+        </div>
+        <div class="meter">
+          <div class="mt"><span>已点亮键位</span><b id="hitCount">—</b></div>
+          <div class="bar"><i id="hitBar"></i></div>
+          <div class="down">正在按住：<b id="holdCount">0</b> 键</div>
+        </div>
+      </div>
+      <div class="unknown" id="unknownBox" hidden>
+        <span class="ukl">当前布局之外的键（媒体键 / 布局差异键）：</span>
+        <span id="unknownList" style="display:contents"></span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">
+        <span id="kbTitle">键盘全图</span>
+        <span class="mini-group">
+          <button class="mini" id="osMac" type="button" title="按 macOS 键盘排布">⌘ macOS</button>
+          <button class="mini" id="osWin" type="button" title="按 Windows 键盘排布">⊞ Windows</button>
+        </span>
+      </div>
+      <div class="kbbox"><div class="kb" id="kb"></div></div>
+      <p class="hint-line">
+        布局随操作系统切换（默认按浏览器检测，点击右上角按钮可手动切换）。页面会拦截大多数浏览器快捷键（空格滚动、Tab 焦点、退格导航、F5 刷新等）以便尽情测试；<b>窗器级的 ⌘W / ⌘Q / ⌘T 依然拦不住</b>，浏览器会自行处理。
+      </p>
+      <p class="hint-line">
+        macOS 上 <code>CapsLock</code> 只有按下事件、没有抬起事件，按第二下即视为回弹；<b>Fn 键属于硬件层</b>，浏览器收不到、无法检测。mac 键盘没有 PrtSc 一排（物理上通常映射为 <code>F13–F15</code>，会出现「布局外」小签）；Windows 键盘的 Win 键在 Mac 键盘上即 ⌘ Command。数字小键盘回车与主回车点亮各自键位。
+      </p>
+    </div>
+  </div>
+
+  <footer>
+    <span class="dot"></span><span id="statusText">等待按键…</span>
+  </footer>
+
+  <script>
+  (function () {
+    "use strict";
+
+    function $(id) { return document.getElementById(id); }
+
+    /* ============ 布局定义 ============
+       行格式 [宽, code, 主标签, 次标签] —— 次标签是键帽左上角的小位移标注。
+       主区六行每行恒 15u（数字行13×1+退格2；字母行Tab1.5+12×1+\1.5；Caps1.75+11×1+Enter2.25；
+       Shift2.25+10×1+Shift2.75；底排7×1.25+空格6.25），导航区五行、小键盘五列行，顶行与 Esc 行对齐。
+       e.code 按 W3C 位置的分配恒定（Command=MetaLeft/Right、Option=AltLeft/Right），
+       变的只是「画法」：底排按 OS 分两套，不会把 Win 键和 ⌘ 揉在一起。 */
+    var ROWS_HEAD = [
+      [ [1, "Escape", "Esc"], [1, "", null, null, "sp"],
+        [1, "F1", "F1"], [1, "F2", "F2"], [1, "F3", "F3"], [1, "F4", "F4"], [0.5, "", null, null, "sp"],
+        [1, "F5", "F5"], [1, "F6", "F6"], [1, "F7", "F7"], [1, "F8", "F8"], [0.5, "", null, null, "sp"],
+        [1, "F9", "F9"], [1, "F10", "F10"], [1, "F11", "F11"], [1, "F12", "F12"] ],
+      [ [1, "Backquote", "`", "~"], [1, "Digit1", "1", "!"], [1, "Digit2", "2", "@"], [1, "Digit3", "3", "#"],
+        [1, "Digit4", "4", "$"], [1, "Digit5", "5", "%"], [1, "Digit6", "6", "^"], [1, "Digit7", "7", "&"],
+        [1, "Digit8", "8", "*"], [1, "Digit9", "9", "("], [1, "Digit0", "0", ")"], [1, "Minus", "-", "_"],
+        [1, "Equal", "=", "+"], [2, "Backspace", "⌫"] ],
+      [ [1.5, "Tab", "Tab"], [1, "KeyQ", "Q"], [1, "KeyW", "W"], [1, "KeyE", "E"], [1, "KeyR", "R"],
+        [1, "KeyT", "T"], [1, "KeyY", "Y"], [1, "KeyU", "U"], [1, "KeyI", "I"], [1, "KeyO", "O"],
+        [1, "KeyP", "P"], [1, "BracketLeft", "[", "{"], [1, "BracketRight", "]", "}"],
+        [1.5, "Backslash", "\\", "|"] ],
+      [ [1.75, "CapsLock", "⇪ Caps"], [1, "KeyA", "A"], [1, "KeyS", "S"], [1, "KeyD", "D"], [1, "KeyF", "F"],
+        [1, "KeyG", "G"], [1, "KeyH", "H"], [1, "KeyJ", "J"], [1, "KeyK", "K"], [1, "KeyL", "L"],
+        [1, "Semicolon", ";", ":"], [1, "Quote", "'", "\""], [2.25, "Enter", "⏎"] ],
+      [ [2.25, "ShiftLeft", "⇧ Shift"], [1, "KeyZ", "Z"], [1, "KeyX", "X"], [1, "KeyC", "C"], [1, "KeyV", "V"],
+        [1, "KeyB", "B"], [1, "KeyN", "N"], [1, "KeyM", "M"], [1, "Comma", ",", "<"], [1, "Period", ".", ">"],
+        [1, "Slash", "/", "?"], [2.75, "ShiftRight", "⇧ Shift"] ]
+    ];
+    /* 底排 · Windows：Ctrl–Win–Alt | 空格 | Alt–Win–Menu–Ctrl。
+       ContextMenu 在 Mac 布局里不存在，届时它落到「布局外」小签上 */
+    /* 标准 PC 底排：Ctrl–Win–Alt | 空格 | Alt–Win–Menu–Ctrl；
+       e.code 恒定（Win=Meta、Alt=Alt），切布局只改画法，按下点亮跟键帽走 */
+    var BOTTOM_WIN = [
+      [ [1.25, "ControlLeft", "Ctrl"], [1.25, "MetaLeft", "⊞ Win"], [1.25, "AltLeft", "Alt"],
+        [6.25, "Space", ""], [1.25, "AltRight", "Alt"], [1.25, "MetaRight", "⊞ Win"],
+        [1.25, "ContextMenu", "▤"], [1.25, "ControlRight", "Ctrl"] ]
+    ];
+    /* 底排 · macOS：fn(幽灵键)–Control–Option–Command | 空格 | Command–Option–Control。
+       物理位置从左到右就是 Control、Option、Command；fn 硬件层收不到，画成幽灵键占 1.25u。
+       Mac 键盘不带 ContextMenu，总键数 103 */
+    var BOTTOM_MAC = [
+      [ [1.25, "", "fn", null, null, "ghost"],
+        [1.25, "ControlLeft", "⌃ Control"], [1.25, "AltLeft", "⌥ Option"], [1.25, "MetaLeft", "⌘ Command"],
+        [6.25, "Space", ""],
+        [1.25, "MetaRight", "⌘ Command"], [1.25, "AltRight", "⌥ Option"], [1.25, "ControlRight", "⌃ Control"] ]
+    ];
+    /* 导航区（宽 3u）：fill 占位把 ↑ 推到中列 */
+    var NAV = [
+      [ [1, "PrintScreen", "PrtSc", "SysRq"], [1, "ScrollLock", "ScrLK"], [1, "Pause", "Pause"] ],
+      [ [1, "Insert", "Ins"], [1, "Home", "Home"], [1, "PageUp", "PgUp"] ],
+      [ [1, "Delete", "Del"], [1, "End", "End"], [1, "PageDown", "PgDn"] ],
+      [ [1, "", null, null, "fill"], [1, "ArrowUp", "↑"], [1, "", null, null, "fill"] ],
+      [ [1, "ArrowLeft", "←"], [1, "ArrowDown", "↓"], [1, "ArrowRight", "→"] ]
+    ];
+    /* 小键盘：grid 网格（+ 与 Enter 各跨两行、0 占两列，行拆分表达不了跨行） */
+    var NUMPAD = [
+      { c: 1, r: 1, code: "NumLock", main: "Num", led: true },
+      { c: 2, r: 1, code: "NumpadDivide",   main: "÷", sub: "/" },
+      { c: 3, r: 1, code: "NumpadMultiply", main: "×", sub: "*" },
+      { c: 4, r: 1, code: "NumpadSubtract", main: "−", sub: "-" },
+      { c: 1, r: 2, code: "Numpad7", main: "7", sub: "Home" },
+      { c: 2, r: 2, code: "Numpad8", main: "8", sub: "↑" },
+      { c: 3, r: 2, code: "Numpad9", main: "9", sub: "PgUp" },
+      { c: 4, r: 2, rs: 2, code: "NumpadAdd", main: "+" },
+      { c: 1, r: 3, code: "Numpad4", main: "4", sub: "←" },
+      { c: 2, r: 3, code: "Numpad5", main: "5" },
+      { c: 3, r: 3, code: "Numpad6", main: "6", sub: "→" },
+      { c: 1, r: 4, code: "Numpad1", main: "1", sub: "End" },
+      { c: 2, r: 4, code: "Numpad2", main: "2", sub: "↓" },
+      { c: 3, r: 4, code: "Numpad3", main: "3", sub: "PgDn" },
+      { c: 4, r: 4, rs: 2, code: "NumpadEnter", main: "⏎" },
+      { c: 1, r: 5, cs: 2, code: "Numpad0", main: "0", sub: "Ins" },
+      { c: 3, r: 5, code: "NumpadDecimal", main: ".", sub: "Del" }
+    ];
+
+    var kbEl = $("kb");
+    var lastName = $("lastName"), lastCode = $("lastCode");
+    var hitCount = $("hitCount"), hitBar = $("hitBar"), holdCount = $("holdCount");
+    var statusText = $("statusText");
+    var unknownBox = $("unknownBox"), unknownList = $("unknownList");
+
+    var codeMap = {};        /* e.code → {el, main} */
+    var totalKeys = 0, hitSet = {}, holdSet = {};
+
+    /* 标签按显式行数组渲染：一行一个 .gl 块。谁在上谁在下由调用方决定，
+       双行键（位移符号/名称、次位符）统一走这里，绝不靠折行碰运气 */
+    function makeKey(lines, isLed) {
+      var el = document.createElement("div");
+      el.className = "k";
+      var lab = document.createElement("div");
+      lab.className = "lab";
+      lines.forEach(function (ln) {
+        var gl = document.createElement("div");
+        gl.className = "gl";
+        gl.textContent = ln;
+        lab.appendChild(gl);
+      });
+      el.appendChild(lab);
+      if (isLed) {
+        var led = document.createElement("div");
+        led.className = "led";
+        el.appendChild(led);
+      }
+      return el;
+    }
+    /* 带符号前缀的标签拆两行：'⌘ Command' → ['⌘','Command']；单行标签原样 */
+    function splitLines(main) {
+      if (!main) return [""];
+      var i = main.indexOf(" ");
+      return i < 0 ? [main] : [main.slice(0, i), main.slice(i + 1)];
+    }
+    function makeFill(w) {
+      var el = document.createElement("div");
+      el.className = "fill";
+      el.style.setProperty("--kw", w);
+      return el;
+    }
+
+    function register(el, code, main) {
+      if (!code) return;
+      el.dataset.code = code;
+      codeMap[code] = { el: el, main: main };
+      totalKeys++;
+    }
+
+    function buildRowBlock(spec, box) {
+      var block = document.createElement("div");
+      block.className = "block";
+      spec.forEach(function (row) {
+        var line = document.createElement("div");
+        line.className = "krow";
+        row.forEach(function (it) {
+          if (it[4]) {
+            line.appendChild(makeFill(it[0]));
+            return;
+          }
+          var code = it[1],
+              isLed = code === "CapsLock" || code === "ScrollLock" ||
+                      (code && code.indexOf("NumLock") === 0 && code === "NumLock");
+          var lines = it[3] ? [it[3], it[2]] : splitLines(it[2]);   /* 次位符在上 */
+          var el = makeKey(lines, isLed);
+          el.style.setProperty("--kw", it[0]);
+          if (it[0] === 1.25) el.classList.add("mod");   /* 底排修饰键：独立小字号 */
+          if (it[5] === "ghost") {
+            /* 幽灵键（fn）：只占位不注册，不可点亮 */
+            el.classList.add("ghost");
+            el.removeAttribute("style");
+            el.style.setProperty("--kw", it[0]);
+          } else {
+            register(el, code, it[2]);
+          }
+          line.appendChild(el);
+        });
+        block.appendChild(line);
+      });
+      box.appendChild(block);
+    }
+
+    function buildNumpad(box) {
+      var block = document.createElement("div");
+      block.className = "block numpad";
+      NUMPAD.forEach(function (it) {
+        var el = makeKey(it.sub ? [it.main, it.sub] : [it.main || ""], it.led);
+        el.style.width = "100%";
+        el.style.height = "100%";
+        /* 无跨行/跨列时直接数字定位；跨了写成起止区间 */
+        el.style.gridColumn = it.cs ? it.c + " / " + (it.c + it.cs) : "" + it.c;
+        el.style.gridRow = it.rs ? it.r + " / " + (it.r + it.rs) : "" + it.r;
+        register(el, it.code, it.main);
+        block.appendChild(el);
+      });
+      box.appendChild(block);
+    }
+
+    /* ============ 布局重建与 OS 切换 ============ */
+    var BOTTOM = { win: BOTTOM_WIN, mac: BOTTOM_MAC };
+
+    /* 整副键盘重建：codeMap/totalKeys 重算，已点亮的描边（hitSet）接回仍在布局里的键 */
+    function buildBoard(m) {
+      kbEl.innerHTML = "";
+      codeMap = {};
+      totalKeys = 0;
+      buildRowBlock(ROWS_HEAD.concat(BOTTOM[m]), kbEl);
+      buildRowBlock(NAV, kbEl);
+      buildNumpad(kbEl);
+      Object.keys(hitSet).forEach(function (c) {
+        if (codeMap[c]) codeMap[c].el.classList.add("hits");
+      });
+      /* 清掉已不存在键的按住态，仍在的补回按住形象 */
+      Object.keys(holdSet).forEach(function (c) {
+        if (!codeMap[c]) delete holdSet[c];
+        else codeMap[c].el.classList.add("pressed");
+      });
+      holdCount.textContent = String(Object.keys(holdSet).length);
+      refreshHits();
+      fitLabs();   /*换布局后标签池全新，标签微缩要重跑 */
+    }
+
+    /* 默认 OS：优先上次的显式选择（localStorage 只存此界面偏好），否则按 UA 推断 */
+    var savedMode = null;
+    try { savedMode = localStorage.getItem("kb-os"); } catch (e) { /* 隐身/禁存就算了 */ }
+    var uaPlat = (navigator.userAgentData && navigator.userAgentData.platform) || "";
+    var mode = (savedMode === "mac" || savedMode === "win") ? savedMode :
+      (/Mac|iPhone|iPad/i.test(uaPlat) || /Mac|iPhone|iPad/i.test(navigator.userAgent) ? "mac" : "win");
+
+    function setMode(m, keep) {
+      mode = m;
+      buildBoard(m);
+      $("osMac").classList.toggle("on", m === "mac");
+      $("osWin").classList.toggle("on", m === "win");
+      $("kbTitle").textContent = (m === "mac" ? "键盘全图 · macOS ⌘" : "键盘全图 · Windows ⊞") +
+                                 "（" + totalKeys + " 键）";
+      if (keep) {
+        try { localStorage.setItem("kb-os", m); } catch (e) {}
+      }
+    }
+
+    $("osMac").addEventListener("click", function () { setMode("mac", true); });
+    $("osWin").addEventListener("click", function () { setMode("win", true); });
+    setMode(mode, false);
+
+    /* 统一面板：物理按下与重置路径都汇到这里（鼠标/触屏点按不参与检测） */
+    function press(code, source) {
+      if (!code) return;
+      var it = codeMap[code];
+      if (it) {
+        holdSet[code] = true;
+        it.el.classList.add("pressed");
+        if (!hitSet[code]) {
+          hitSet[code] = true;
+          it.el.classList.add("hits");
+          refreshHits();
+        }
+        if (source !== "re") lastName.textContent = it.main || code;
+      } else {
+        unknownFlash(code);
+        if (source !== "re") {
+          lastName.textContent = "（布局外键）";
+          lastCode.textContent = "code: " + code;
+        }
+      }
+      holdCount.textContent = String(Object.keys(holdSet).length);
+      if (source !== "re") {
+        lastCode.textContent = (codeMap[code] ? "code: " + code : "code: " + code + "（当前布局之外）");
+      }
+    }
+
+    function release(code) {
+      var it = codeMap[code];
+      if (it) {
+        it.el.classList.remove("pressed");
+        delete holdSet[code];
+        holdCount.textContent = String(Object.keys(holdSet).length);
+        statusText.innerHTML = "";
+        var pre = document.createTextNode("最近释放：");
+        var b = document.createElement("b");
+        b.textContent = code;
+        statusText.appendChild(pre);
+        statusText.appendChild(b);
+      }
+    }
+
+    function refreshHits() {
+      var n = Object.keys(hitSet).length;
+      hitCount.textContent = n + " / " + totalKeys;
+      hitBar.style.width = Math.round(n * 1000 / totalKeys) / 10 + "%";
+    }
+
+    /* 当前布局外的码：闪一枚小签登记即可，不动布局本身 */
+    var unknownTimers = {};
+    function unknownFlash(code) {
+      unknownBox.hidden = false;
+      var chip = unknownList.querySelector("span[data-uc=\"" + code + "\"]");
+      if (!chip) {
+        chip = document.createElement("span");
+        chip.className = "uk";
+        chip.dataset.uc = code;
+        chip.textContent = code;
+        unknownList.appendChild(chip);
+      }
+      chip.classList.add("lit");
+      clearTimeout(unknownTimers[code]);
+      unknownTimers[code] = setTimeout(function () { chip.classList.remove("lit"); }, 180);
+    }
+
+    /* 物理键盘：preventDefault 拦下空格滚动 / Tab 焦点 / 退格导航 / F5 等页面副作用，
+       让页面变成纯键盘测试场；窗器级 ⌘W/⌘Q 浏览器自留，hint 已声明 */
+    window.addEventListener("keydown", function (e) {
+      e.preventDefault();
+      /* macOS 的 CapsLock 只有按下没有抬起：按第二下视为拨回，直接走释放 */
+      if (e.code === "CapsLock" && holdSet.CapsLock) {
+        release("CapsLock");
+        return;
+      }
+      if (!e.repeat) {
+        if (codeMap[e.code] && !hitSet[e.code]) { /* 首按进计数 */
+          hitSet[e.code] = true;
+          if (codeMap[e.code]) codeMap[e.code].el.classList.add("hits");
+          refreshHits();
+        }
+      }
+      press(e.code, "kbd");   /* 仅物理按键计入检测 */
+      if (e.code && codeMap[e.code]) {
+        lastCode.textContent = "code: " + e.code + " · key: " + (e.key || "∅");
+      }
+      statusText.innerHTML = "";
+      statusText.appendChild(document.createTextNode("按下："));
+      var b = document.createElement("b");
+      b.textContent = e.code || "（未知码）";
+      statusText.appendChild(b);
+    }, false);
+
+    window.addEventListener("keyup", function (e) {
+      e.preventDefault();
+      release(e.code);
+    }, false);
+
+    /* 失焦清空按住态：Alt-Tab 切走再回来，避免一排“幽灵键”一直亮着 */
+    window.addEventListener("blur", function () {
+      Object.keys(codeMap).forEach(function (c) {
+        codeMap[c].el.classList.remove("pressed");
+      });
+      holdSet = {};
+      holdCount.textContent = "0";
+    });
+
+    /* 重置计数：点亮描边清零重来 */
+    $("resetBtn").addEventListener("click", function () {
+      hitSet = {};
+      Object.keys(codeMap).forEach(function (c) {
+        codeMap[c].el.classList.remove("pressed");
+        codeMap[c].el.classList.remove("hits");
+      });
+      holdSet = {};
+      lastName.textContent = "—";
+      lastCode.textContent = "计数已重置，重新开始";
+      refreshHits();
+      statusText.innerHTML = "";
+      statusText.appendChild(document.createTextNode("已重置，从左上角 Esc 重新点亮。"));
+    });
+
+    /* --u 尺寸自适应：
+       总宽(22u 键宽) = 主块(15u + 行内 gap 至多 15×4px) + 12
+                      + 导航(3u + 2×4px) + 12 + 键盘区(4u + 3×4px)
+       → 22u + (15+2+3)×4px + 24px = 容器宽，u = (宽 - 104px)/22
+       字号随 u 线性放大到合理档位；每个标签装不装得下交给 fitLabs 逐个缩放兜底 */
+    function fitUnits() {
+      var box = document.querySelector(".kbbox");
+      var W = box.clientWidth - 8;
+      var u = (W - 104) / 22;
+      u = Math.max(20, Math.min(u, 52));
+      kbEl.style.setProperty("--u", u.toFixed(2) + "px");
+      kbEl.style.setProperty("--kh", Math.round(u * 0.92) + "px");
+      kbEl.style.setProperty("--lf", Math.min(13, Math.max(10.5, u * 0.30)).toFixed(2) + "px");
+      /* 底排修饰键小字号：上限 = (1.25u−6) / (0.744em × 7 字『Command』) ≈ (1.25u−6)/5.4，
+         大屏时天生完整，不再依赖缩放 */
+      kbEl.style.setProperty("--lfs", Math.min(10.5, Math.max(6.5, (1.25 * u - 6) / 5.4)).toFixed(2) + "px");
+      fitLabs();
+    }
+    /* 逐标签微缩兜底：字宽因系统字体而异（实测同 weight 下 Home 0.75em、Pause 0.62em），
+       纯公式校不准——把标签盒宽直接钉在键内宽上居中，量 scrollWidth 超了就等比缩放，
+       不用省略号截断，任何窗口尺寸下标签都完整可见 */
+    function fitLabs() {
+      var kh = parseFloat(kbEl.style.getPropertyValue("--kh")) || 0;
+      kbEl.querySelectorAll(".k").forEach(function (k) {
+        var avail = k.clientWidth - 2;   /* 键内宽：clientWidth 已扣 border，再留 1px 呼吸 */
+        var lab = k.querySelector(".lab");
+        if (lab) {
+          lab.style.width = avail + "px";
+          var sw = lab.scrollWidth, sh = lab.scrollHeight;
+          var sx = sw > avail && sw > 0 ? avail / sw : 1;
+          /* 两行修饰标签在矮键帽上还要纵向压一档（u 很小时才会触发） */
+          var needSy = k.classList.contains("mod") && kh && sh > kh - 2;
+          var sy = needSy ? (kh - 2) / sh : 1;
+          lab.style.transform = (sx < 1 || sy < 1) ?
+            "scale(" + Math.min(1, sx).toFixed(3) + ", " + Math.min(1, sy).toFixed(3) + ")" : "";
+          lab.style.transformOrigin = "center";
+        }
+      });
+    }
+    fitUnits();
+    window.addEventListener("resize", fitUnits);
+    refreshHits();
+  })();
+  </script>
+</body>
+</html>
