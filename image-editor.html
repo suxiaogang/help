@@ -207,6 +207,17 @@
     /* 裁剪模式的选区行没有左右箭头，只用两列，避免数值被挤进 34px 的箭头列 */
     .stepper.sel-row { grid-template-columns: 54px minmax(0, 1fr); }
 
+    /* 比例预设行：小胶囊按钮，激活态复用 button.on（绿色） */
+    .ratio-btns { display: flex; gap: 4px; flex-wrap: wrap; min-width: 0; }
+    .ratio-btns button {
+      padding: 0 9px;
+      height: 30px;
+      font-size: 11px;
+      line-height: 1;
+      font-weight: 600;
+      font-family: var(--mono);
+    }
+
     .stepper .sp-label {
       font-size: 11px;
       color: var(--muted);
@@ -494,6 +505,10 @@
           <!-- 裁剪模式：选区信息 + 应用/取消 -->
           <div class="steppers hidden" id="cropBox">
             <div class="stepper sel-row">
+              <span class="sp-label">比例</span>
+              <span class="ratio-btns" id="ratioBtns"></span>
+            </div>
+            <div class="stepper sel-row">
               <span class="sp-label">选区</span>
               <span class="sp-val" id="selVal">未选择</span>
             </div>
@@ -507,7 +522,7 @@
             缩小画布即裁剪，放大则白色补齐。可<b>拖动右侧画面</b>微调。
           </div>
           <div class="tip hidden" id="cropTip">
-            在右侧画面上<b>拖出选区</b>，也可拖动四角调整。按 Esc 取消。
+            在右侧画面上<b>拖出选区</b>，也可拖动四角调整；上面选个比例，拖动时选区会锁定该比例。按 Esc 取消。
           </div>
         </div>
 
@@ -568,6 +583,7 @@
     var sourceImage = null;   // 原图（只读，永不修改）
     var resultCanvas = null;  // 当前结果（完整分辨率），用于导出
     var previewUrl = null;    // 原图预览 URL
+    var srcMeta = null;       // 当前文件的静态信息 {type,size,alpha}：与渲染参数无关，载入时测定一次
 
     /* 编辑参数 */
     var state = {
@@ -588,6 +604,7 @@
     var cropMode = false;
     var cropSel = null;    // {x,y,w,h}，画布坐标
     var cropDrag = null;   // 拖拽状态
+    var cropRatio = null;  // 锁定比例 w/h（数字）；null = 自由
 
     function clamp01(v) {
       if (!isFinite(v)) return 0.5;
@@ -615,6 +632,7 @@
     var squareBtn  = document.getElementById("squareBtn");
     var cropBtn    = document.getElementById("cropBtn");
     var applyCropBtn = document.getElementById("applyCropBtn");
+    var ratioBtns    = document.getElementById("ratioBtns");
     var cancelCropBtn = document.getElementById("cancelCropBtn");
     var selVal     = document.getElementById("selVal");
     var anchorBox  = document.getElementById("anchorBox");
@@ -643,6 +661,38 @@
       if (n < 1024) return n + " B";
       if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB";
       return (n / 1024 / 1024).toFixed(2) + " MB";
+    }
+
+    /* 宽高比展示：精确的整数简比用「=」（10:7、5:4 这类），一眼看出倍数关系；
+       只有简比两侧都超 50（互质大数，如 1000×603）才退化成小数估算「≈」，并明示不准确。
+       横图给 n:1，竖图给 1:n，统一长边在前便于横向比较 */
+    function ratioText(w, h) {
+      var a = w, b = h;
+      while (b) { var t = a % b; a = b; b = t; }   // gcd
+      var rw = w / a, rh = h / a;
+      if (rw <= 50 && rh <= 50) return "= " + rw + ":" + rh;
+      var v = w / h;
+      return v >= 1 ? "≈ " + v.toFixed(2) + ":1" : "≈ 1:" + (1 / v).toFixed(2);
+    }
+
+    /* 透明通道判定：原图缩到 ≤1024 边长再逐像素扫 alpha<255。
+       缩小是为了大图不卡（40MB PNG 全分辨率扫描要过亿字节）；
+       面积加权后极小的透明点可能漏检，作信息展示够用 */
+    function scanAlpha(src) {
+      try {
+        var r = Math.min(1, 1024 / Math.max(src.width, src.height));
+        var w = Math.max(1, Math.round(src.width * r));
+        var h = Math.max(1, Math.round(src.height * r));
+        var c = document.createElement("canvas");
+        c.width = w; c.height = h;
+        var ctx = c.getContext("2d", { willReadFrequently: true });
+        ctx.drawImage(src, 0, 0, w, h);
+        var d = ctx.getImageData(0, 0, w, h).data;
+        for (var i = 3; i < d.length; i += 4) {
+          if (d[i] < 255) return true;
+        }
+      } catch (e) { /* 跨域等读不到像素就当作不透明 */ }
+      return false;
     }
 
     function clampEdge(v) {
@@ -737,6 +787,57 @@
       state[key] = target;
       syncAnchor();
       render();
+    }
+
+    /* ============================================================
+       裁剪比例预设 —— 常用画幅一键锁定；拖动/缩放选区时按此约束
+       ============================================================ */
+    var RATIO_PRESETS = [
+        { t: "自由", v: null },
+        { t: "16:9", v: 16 / 9 },
+        { t: "4:3",  v: 4 / 3 },
+        { t: "5:4",  v: 5 / 4 },
+        { t: "9:16", v: 9 / 16 },
+    ];
+
+    RATIO_PRESETS.forEach(function (preset) {
+        var b = document.createElement("button");
+        b.type = "button";
+        b.textContent = preset.t;
+        b.dataset.ratio = String(preset.v);
+        if (preset.t === "9:16") b.title = "竖幅手机屏比例（横过来就是 16:9）";
+        else b.title = "拖动选区时锁定 " + preset.t;
+        b.addEventListener("click", function () { selectRatio(preset.v); });
+        ratioBtns.appendChild(b);
+    });
+
+    function syncRatioBtns() {
+        [...ratioBtns.children].forEach(function (b) {
+            var v = b.dataset.ratio === "null" ? null : parseFloat(b.dataset.ratio);
+            b.classList.toggle("on", v === cropRatio);
+        });
+    }
+
+    /* 点比例按钮：以当前选区中心为锚，把选区重塑成该比例的可用最大矩形 */
+    function selectRatio(r) {
+        cropRatio = r;
+        syncRatioBtns();
+        if (r && cropMode && cropSel && resultCanvas) {
+            var rect = cropContentRect();
+            var cx = cropSel.x + cropSel.w / 2;
+            var cy = cropSel.y + cropSel.h / 2;
+            // 以当前选区较大边为基准重构尺寸，再撑到内容矩形上限
+            var w = Math.max(cropSel.w, cropSel.h * r);
+            var h = w / r;
+            if (w > rect.w) { w = rect.w; h = w / r; }
+            if (h > rect.h) { h = rect.h; w = h * r; }
+            cropSel = {
+                x: clampRange(cx - w / 2, rect.x, rect.x + rect.w - w),
+                y: clampRange(cy - h / 2, rect.y, rect.y + rect.h - h),
+                w: w, h: h,
+            };
+            showCropOverlay();
+        }
     }
 
     axMinus.addEventListener("click", function () { stepAxis("x", -1); });
@@ -930,6 +1031,26 @@
       return Math.max(lo, Math.min(v, hi));
     }
 
+    /* 锁定比例下的选区拟合：以锚点角 (ax,ay) 朝指针方向展开，宽高按 r 对齐，
+       并同时受内容矩形约束——两种限制取小者，保证贴近边界时选区不越界 */
+    function fitRatioSel(ax, ay, px, py, rect, r) {
+      var dx = px >= ax ? 1 : -1;
+      var dy = py >= ay ? 1 : -1;
+      var availW = dx > 0 ? rect.x + rect.w - ax : ax - rect.x;
+      var availH = dy > 0 ? rect.y + rect.h - ay : ay - rect.y;
+      var rawW = Math.abs(px - ax);
+      var rawH = Math.abs(py - ay);
+      var w, h;
+      if (availW / availH > r) { h = Math.min(rawH, availH); w = h * r; }
+      else { w = Math.min(rawW, availW); h = w / r; }
+      w = Math.max(w, 1); h = Math.max(h, 1);
+      return {
+        x: dx > 0 ? ax : ax - w,
+        y: dy > 0 ? ay : ay - h,
+        w: w, h: h
+      };
+    }
+
     function setCropMode(on) {
       cropMode = on;
       cropBtn.classList.toggle("on", on);
@@ -941,7 +1062,9 @@
       cvHIn.disabled = on || !sourceImage;
 
       if (on) {
-        // 默认选区 = 整个图像内容区域
+        // 默认选区 = 整个图像内容区域；比例回「自由」，避免上次的锁定悄悄约束这轮
+        cropRatio = null;
+        syncRatioBtns();
         var r = cropContentRect();
         cropSel = { x: r.x, y: r.y, w: r.w, h: r.h };
         cropOv.classList.remove("hidden");
@@ -1032,32 +1155,44 @@
         var r = cropContentRect();
 
         if (cropDrag.mode === "new") {
-          var x0 = Math.min(cropDrag.ox, p.x);
-          var y0 = Math.min(cropDrag.oy, p.y);
-          cropSel.x = clampRange(x0, r.x, r.x + r.w);
-          cropSel.y = clampRange(y0, r.y, r.y + r.h);
-          cropSel.w = Math.max(1, Math.abs(p.x - cropDrag.ox));
-          cropSel.h = Math.max(1, Math.abs(p.y - cropDrag.oy));
-          if (cropSel.x + cropSel.w > r.x + r.w) cropSel.w = r.x + r.w - cropSel.x;
-          if (cropSel.y + cropSel.h > r.y + r.h) cropSel.h = r.y + r.h - cropSel.y;
+          if (cropRatio) {
+            // 锁定比例：以拖拽起点为角锚点、朝指针方向展开，宽高贴合比例
+            cropSel = fitRatioSel(cropDrag.ox, cropDrag.oy, p.x, p.y, r, cropRatio);
+          } else {
+            var x0 = Math.min(cropDrag.ox, p.x);
+            var y0 = Math.min(cropDrag.oy, p.y);
+            cropSel.x = clampRange(x0, r.x, r.x + r.w);
+            cropSel.y = clampRange(y0, r.y, r.y + r.h);
+            cropSel.w = Math.max(1, Math.abs(p.x - cropDrag.ox));
+            cropSel.h = Math.max(1, Math.abs(p.y - cropDrag.oy));
+            if (cropSel.x + cropSel.w > r.x + r.w) cropSel.w = r.x + r.w - cropSel.x;
+            if (cropSel.y + cropSel.h > r.y + r.h) cropSel.h = r.y + r.h - cropSel.y;
+          }
         } else if (cropDrag.mode === "move") {
           var dx = p.x - cropDrag.ox;
           var dy = p.y - cropDrag.oy;
           cropSel.x = clampRange(cropDrag.x0 + dx, r.x, r.x + r.w - cropSel.w);
           cropSel.y = clampRange(cropDrag.y0 + dy, r.y, r.y + r.h - cropSel.h);
         } else {
-          var L = cropDrag.x0, T = cropDrag.y0;
-          var Rt = cropDrag.x0 + cropDrag.w0, Bt = cropDrag.y0 + cropDrag.h0;
           var hd = cropDrag.handle;
-          if (hd.indexOf("w") >= 0) L = p.x;
-          if (hd.indexOf("e") >= 0) Rt = p.x;
-          if (hd.indexOf("n") >= 0) T = p.y;
-          if (hd.indexOf("s") >= 0) Bt = p.y;
-          L = clampRange(L, r.x, Rt - MIN);
-          Rt = clampRange(Rt, L + MIN, r.x + r.w);
-          T = clampRange(T, r.y, Bt - MIN);
-          Bt = clampRange(Bt, T + MIN, r.y + r.h);
-          cropSel = { x: L, y: T, w: Rt - L, h: Bt - T };
+          if (cropRatio) {
+            // 锁定比例：缩放手柄按被拖侧的「对角锚点」重建选区（如拖 se=西北角锚定）
+            var aX = hd.indexOf("w") >= 0 ? cropDrag.x0 + cropDrag.w0 : cropDrag.x0;
+            var aY = hd.indexOf("n") >= 0 ? cropDrag.y0 + cropDrag.h0 : cropDrag.y0;
+            cropSel = fitRatioSel(aX, aY, p.x, p.y, r, cropRatio);
+          } else {
+            var L = cropDrag.x0, T = cropDrag.y0;
+            var Rt = cropDrag.x0 + cropDrag.w0, Bt = cropDrag.y0 + cropDrag.h0;
+            if (hd.indexOf("w") >= 0) L = p.x;
+            if (hd.indexOf("e") >= 0) Rt = p.x;
+            if (hd.indexOf("n") >= 0) T = p.y;
+            if (hd.indexOf("s") >= 0) Bt = p.y;
+            L = clampRange(L, r.x, Rt - MIN);
+            Rt = clampRange(Rt, L + MIN, r.x + r.w);
+            T = clampRange(T, r.y, Bt - MIN);
+            Bt = clampRange(Bt, T + MIN, r.y + r.h);
+            cropSel = { x: L, y: T, w: Rt - L, h: Bt - T };
+          }
         }
         e.preventDefault();
         showCropOverlay();
@@ -1081,9 +1216,15 @@
         "原始 <b>" + ow + "×" + oh + "</b>",
         "图像 <b>" + iw + "×" + ih + "</b>",
         "画布 <b>" + cw + "×" + ch + "</b>",
+        "比例 <b>" + ratioText(cw, ch) + "</b>",
         "缩放 <b>" + (scale * 100).toFixed(1) + "%</b>",
         "锚点 <b>" + anchorOf().label + "</b>"
       ];
+      /* 文件类型 / 体积 / 透明通道是原图的静态事实，加载时测一次，不随渲染参数变 */
+      if (srcMeta) {
+        parts.unshift("文件 <b>" + srcMeta.type + " · " + formatBytes(srcMeta.size) + "</b>");
+        parts.splice(2, 0, "透明 <b>" + (srcMeta.alpha ? "有" : "无") + "</b>");
+      }
       if (cropped) parts.push("<b style='color:var(--danger)'>已裁剪</b>");
       if (padded)  parts.push("<b style='color:var(--accent)'>白色补齐</b>");
 
@@ -1244,6 +1385,13 @@
 
         sourceImage = await loadImageFile(file);
         previewUrl = URL.createObjectURL(file);
+        // 首次载入即测定文件类型、体积与透明通道，比例随首次渲染显示原始值
+        var ext = (file.type.split("/")[1] || "").toUpperCase();
+        srcMeta = {
+          type: ext === "JPEG" ? "JPG" : (ext || "IMG"),
+          size: file.size,
+          alpha: scanAlpha(sourceImage)
+        };
 
         resetAll();
         setInputsEnabled(true);
