@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>HTML 压缩工具</title>
+  <meta name="description" content="在线压缩 HTML 源码，去除注释与多余空白，纯前端处理，代码不上传" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23171c24'/%3E%3Ctext x='16' y='23' font-size='18' font-weight='bold' font-family='ui-monospace,Menlo,monospace' fill='%233dd68c' text-anchor='middle'%3E%3E_%3C/text%3E%3C/svg%3E" />
+  <style>
+    :root { --bg:#0e1116; --panel:#171c24; --panel-2:#1e2632; --border:#2a3340; --text:#e8edf4; --muted:#8b97a8; --accent:#3dd68c; --accent-2:#2bb673; --warn:#ffb340; --radius:10px; --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; --sans:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif; }
+    * { box-sizing:border-box; }
+    html, body { margin:0; height:100%; }
+    [hidden] { display:none !important; }
+    body { background:var(--bg); color:var(--text); font:13px var(--sans); display:flex; flex-direction:column; overflow:hidden; }
+    header { flex:0 0 auto; padding:11px 22px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+    h1 { font-size:16px; margin:0; font-weight:600; letter-spacing:.3px; }
+    .hint { font-size:12px; color:var(--muted); }
+    .spacer { flex:1 1 auto; }
+    .layout { flex:1 1 auto; min-height:0; display:grid; grid-template-columns:minmax(340px,1fr) minmax(340px,1fr); grid-template-rows:minmax(0,1fr); }
+    .column { min-width:0; min-height:0; display:flex; flex-direction:column; }
+    .column + .column { border-left:1px solid var(--border); }
+    .col-head { flex:0 0 auto; min-height:41px; padding:9px 16px; border-bottom:1px solid var(--border); color:var(--muted); font-size:12px; font-weight:600; letter-spacing:.5px; display:flex; align-items:center; justify-content:space-between; gap:10px; }
+    .actions { display:flex; gap:6px; align-items:center; }
+    button { font:inherit; font-size:12px; padding:6px 12px; border:1px solid var(--border); border-radius:7px; background:var(--panel-2); color:var(--text); cursor:pointer; white-space:nowrap; transition:.15s; }
+    button:hover:not(:disabled) { background:#232c39; border-color:#3a4557; }
+    button:disabled { opacity:.45; cursor:not-allowed; }
+    button.primary { background:var(--accent); border-color:var(--accent); color:#062315; font-weight:600; }
+    button.primary:hover:not(:disabled) { background:var(--accent-2); border-color:var(--accent-2); }
+    button.mini { padding:4px 9px; font-size:11px; }
+    .editor, .result { flex:1 1 auto; min-height:0; padding:14px 16px; display:flex; }
+    textarea { width:100%; height:100%; min-height:120px; resize:none; outline:none; border:1px solid var(--border); border-radius:var(--radius); background:var(--panel); color:var(--text); padding:12px; font:12px/19px var(--mono); white-space:pre; overflow:auto; tab-size:2; }
+    textarea:focus { border-color:var(--accent); }
+    textarea::placeholder { color:#566174; }
+    #output { color:#b8c4d3; }
+    #output.display-wrap { white-space:pre-wrap; overflow-wrap:anywhere; }
+    .panel { flex:0 0 auto; padding:0 16px 14px; }
+    .hint-line { color:var(--muted); font-size:11px; line-height:1.5; }
+    .hint-line code { color:var(--text); font-family:var(--mono); }
+    .status { min-height:17px; margin-top:7px; }
+    .status.ok { color:var(--accent); }
+    .status.warn { color:var(--warn); }
+    footer { flex:0 0 auto; padding:9px 20px; border-top:1px solid var(--border); color:var(--muted); font-size:12px; display:flex; align-items:center; gap:8px; }
+    footer .dot { width:7px; height:7px; flex:0 0 auto; border-radius:50%; background:var(--accent); }
+    .meta { display:flex; gap:16px; font-family:var(--mono); font-size:11px; }
+    .meta b { color:var(--text); font-weight:400; margin-left:5px; }
+    .footer-status { margin-left:auto; }
+    ::-webkit-scrollbar { width:9px; height:9px; } ::-webkit-scrollbar-track { background:transparent; } ::-webkit-scrollbar-thumb { background:#2c3542; border-radius:5px; }
+    @media (max-width:820px) {
+      html,body { height:auto; } body { overflow:visible; }
+      .layout { grid-template-columns:1fr; grid-template-rows:430px 430px; }
+      .column + .column { border-left:0; border-top:1px solid var(--border); }
+      header { padding:11px 14px; } .hint { display:none; }
+    }
+    @media (max-width:560px) { .meta { display:none; } .col-head { padding-left:12px; padding-right:12px; } .editor,.result { padding:10px 12px; } .panel { padding:0 12px 12px; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>🧩 HTML 压缩工具</h1>
+    <span class="hint">去除注释与多余空白 · 保留脚本、样式和预格式化文本 · 纯前端处理，代码不上传</span>
+  </header>
+
+  <div class="layout">
+    <section class="column">
+      <div class="col-head"><span>HTML 源码</span><div class="actions"><button type="button" class="mini" id="sampleBtn">载入示例</button><button type="button" class="mini" id="clearBtn">清空</button></div></div>
+      <div class="editor"><textarea id="source" spellcheck="false" autocomplete="off" autocapitalize="off" wrap="off" placeholder="在此粘贴或输入 HTML 源码..."></textarea></div>
+      <div class="panel"><div class="hint-line status" id="statusLine"></div><div class="hint-line">压缩会移除 HTML 注释和标签之间的空白；条件注释、<code>pre</code>、<code>textarea</code>、<code>script</code>、<code>style</code> 内容保持原样。</div></div>
+    </section>
+    <section class="column">
+      <div class="col-head"><span>压缩结果</span><div class="actions"><button type="button" class="mini" id="wrapBtn" aria-pressed="false">换行显示</button><button type="button" class="mini" id="copyBtn" disabled>复制</button></div></div>
+      <div class="result"><textarea id="output" readonly spellcheck="false" wrap="off" placeholder="压缩后的 HTML 会显示在这里..."></textarea></div>
+      <div class="panel"><div class="hint-line">输出可直接粘贴回 HTML 文件。压缩结果只在当前浏览器内生成，不会上传。</div></div>
+    </section>
+  </div>
+
+  <footer><span class="dot"></span><span class="meta"><span>原始 <b id="before">0 B</b></span><span>压缩后 <b id="after">0 B</b></span><span>减少 <b id="saved">0%</b></span></span><span class="footer-status" id="footerStatus">等待输入 HTML…</span></footer>
+
+  <script>
+  (function () {
+    "use strict";
+    var source = document.getElementById("source");
+    var output = document.getElementById("output");
+    var statusLine = document.getElementById("statusLine");
+    var wrapBtn = document.getElementById("wrapBtn");
+    var copyBtn = document.getElementById("copyBtn");
+    var sample = '<!doctype html>\n<html>\n  <head>\n    <!-- 页面标题 -->\n    <title>示例页面</title>\n    <style>\n      body { color: #333; }\n    </style>\n  </head>\n  <body>\n    <h1>你好，世界</h1>\n    <p>这是一个示例页面。</p>\n    <script>\n      const message = "hello";\n      console.log(message);\n    <\/script>\n  </body>\n</html>';
+
+    function bytes(text) { return new Blob([text]).size; }
+    function size(n) { return n < 1024 ? n + " B" : n < 1048576 ? (n / 1024).toFixed(1) + " KB" : (n / 1048576).toFixed(2) + " MB"; }
+
+    function minifyCode(text, type) {
+      var out = [], strings = [], quote = "", escaped = false, i = 0;
+      for (; i < text.length; i++) {
+        var c = text[i], next = text[i + 1];
+        if (quote) {
+          var value = c;
+          while (i + 1 < text.length) {
+            if (escaped) { escaped = false; value += text[++i]; continue; }
+            if (text[i] === "\\") { escaped = true; value += text[++i]; continue; }
+            if (text[i + 1] === quote) { value += text[++i]; break; }
+            value += text[++i];
+          }
+          strings.push(value); out.push("___HTML_MINIFY_STRING_" + (strings.length - 1) + "___"); quote = "";
+        } else if (c === "'" || c === '"' || (type === "js" && c === "`")) {
+          quote = c; out.push(c);
+        } else if (c === "/" && next === "*") {
+          i += 2;
+          while (i < text.length && !(text[i] === "*" && text[i + 1] === "/")) i++;
+          i++;
+        } else if (type === "js" && c === "/" && next === "/") {
+          while (i < text.length && text[i] !== "\n" && text[i] !== "\r") i++;
+        } else {
+          out.push(c);
+        }
+      }
+      var result = out.join("").replace(/\s+/g, " ").trim();
+      if (type === "css") {
+        result = result.replace(/\s*([{}:;,>+~])\s*/g, "$1");
+        return result.replace(/___HTML_MINIFY_STRING_(\d+)___/g, function (_, n) { return strings[Number(n)]; });
+      }
+      // 只移除不会影响词法的分隔符空白，保留关键字与标识符之间的空格。
+      result = result.replace(/\s*([{}();,:])\s*/g, "$1");
+      return result.replace(/___HTML_MINIFY_STRING_(\d+)___/g, function (_, n) { return strings[Number(n)]; });
+    }
+
+    function minify(html) {
+      var out = [], pos = 0, raw = /^(script|style|pre|textarea|title|xmp)$/i;
+      while (pos < html.length) {
+        var open = html.indexOf("<", pos);
+        if (open < 0) { out.push(html.slice(pos).replace(/\s+/g, " ")); break; }
+        if (open > pos) out.push(html.slice(pos, open).replace(/\s+/g, " "));
+        if (html.slice(open, open + 4) === "<!--") {
+          var endComment = html.indexOf("-->", open + 4);
+          pos = endComment < 0 ? html.length : endComment + 3;
+          continue;
+        }
+        var match = html.slice(open).match(/^<\s*([A-Za-z][\w:-]*)\b[^>]*>/);
+        if (!match) { out.push("<"); pos = open + 1; continue; }
+        var tag = match[1], token = match[0].replace(/\s+/g, " ").replace(/\s*([=])\s*/g, "$1").replace(/\s*(\/?>)\s*$/, "$1");
+        out.push(token); pos = open + match[0].length;
+        if (raw.test(tag) && !/\/>$/.test(token)) {
+          var closeRe = new RegExp("<\\/\\s*" + tag + "\\s*>", "i"), rest = html.slice(pos), close = closeRe.exec(rest);
+          if (!close) { out.push(rest); break; }
+          var body = rest.slice(0, close.index);
+          out.push(raw.test(tag) && /^(script|style)$/i.test(tag) ? minifyCode(body, tag.toLowerCase() === "script" ? "js" : "css") : body, close[0]);
+          pos += close.index + close[0].length;
+        }
+      }
+      return out.join("").replace(/>\s+</g, "><").replace(/[\r\n\t]/g, "").trim();
+    }
+
+    function run() {
+      var input = source.value;
+      if (!input.trim()) { output.value = ""; copyBtn.disabled = true; statusLine.textContent = ""; document.getElementById("footerStatus").textContent = "等待输入 HTML…"; return; }
+      var result = minify(input), before = bytes(input), after = bytes(result), saved = before ? Math.max(0, (1 - after / before) * 100) : 0;
+      output.value = result; copyBtn.disabled = !result;
+      document.getElementById("before").textContent = size(before); document.getElementById("after").textContent = size(after); document.getElementById("saved").textContent = saved.toFixed(1) + "%";
+      statusLine.className = "hint-line status ok"; statusLine.textContent = "已压缩，可用 ⌘Z / Ctrl+Z 撤销输入修改。";
+      document.getElementById("footerStatus").textContent = "已生成压缩结果";
+    }
+    source.addEventListener("input", run);
+    wrapBtn.addEventListener("click", function () {
+      var wrapped = output.classList.toggle("display-wrap");
+      wrapBtn.setAttribute("aria-pressed", wrapped ? "true" : "false");
+      wrapBtn.textContent = wrapped ? "单行显示" : "换行显示";
+      wrapBtn.title = wrapped ? "切换为单行显示" : "切换为换行显示";
+    });
+    document.getElementById("sampleBtn").addEventListener("click", function () { source.value = sample; run(); source.focus(); });
+    document.getElementById("clearBtn").addEventListener("click", function () { source.value = ""; run(); source.focus(); });
+    copyBtn.addEventListener("click", function () {
+      if (!output.value) return;
+      navigator.clipboard && navigator.clipboard.writeText(output.value).then(function () { document.getElementById("footerStatus").textContent = "已复制压缩结果"; }, function () { output.select(); document.execCommand("copy"); });
+    });
+  }());
+  </script>
+</body>
+</html>
