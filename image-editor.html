@@ -110,6 +110,17 @@
     .head-btns { display: flex; gap: 6px; }
     .crop-actions { display: flex; gap: 6px; }
     .crop-actions button { flex: 1; }
+    .export-actions { align-items: center; }
+    .export-format {
+      height: 32px;
+      padding: 0 8px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      background: var(--panel-2);
+      color: var(--text);
+      font: inherit;
+      font-size: 12px;
+    }
 
     /* ---------- 左列：上传 ---------- */
     .drop {
@@ -537,9 +548,13 @@
 
       <div class="col-head">
         <span>导出</span>
-        <div class="actions">
+        <div class="actions export-actions">
           <button type="button" id="resetAllBtn" disabled>全部重置</button>
           <button type="button" class="primary" id="exportBtn" disabled>下载 PNG</button>
+          <select id="exportFormat" class="export-format" aria-label="导出格式" disabled>
+            <option value="png">PNG</option>
+            <option value="webp">WebP</option>
+          </select>
         </div>
       </div>
     </section>
@@ -642,6 +657,7 @@
     var rebaseBtn = document.getElementById("rebaseBtn");
     var resetAllBtn= document.getElementById("resetAllBtn");
     var exportBtn  = document.getElementById("exportBtn");
+    var exportFormat = document.getElementById("exportFormat");
     var preview    = document.getElementById("preview");
     var zoomLabel  = document.getElementById("zoomLabel");
     var metaBar    = document.getElementById("metaBar");
@@ -1412,6 +1428,7 @@
       rebaseBtn.disabled = !on;
       resetAllBtn.disabled = !on;
       exportBtn.disabled = !on;
+      exportFormat.disabled = !on;
     }
 
     /* ============================================================
@@ -1505,17 +1522,27 @@
 
     exportBtn.addEventListener("click", async function () {
       if (!resultCanvas) return;
-      var blob = await new Promise(function (res) { resultCanvas.toBlob(res, "image/png"); });
+      var format = exportFormat.value;
+      var mimeType = format === "webp" ? "image/webp" : "image/png";
+      var blob = await new Promise(function (res) { resultCanvas.toBlob(res, mimeType); });
       if (!blob) { setStatus("导出失败", "error"); return; }
+      if (blob.type !== mimeType) {
+        setStatus(format === "webp" ? "当前浏览器不支持 WebP 导出" : "导出失败", "error");
+        return;
+      }
       var url = URL.createObjectURL(blob);
       var a = document.createElement("a");
       a.href = url;
-      a.download = "edited-" + resultCanvas.width + "x" + resultCanvas.height + ".png";
+      a.download = "edited-" + resultCanvas.width + "x" + resultCanvas.height + "." + format;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
-      setStatus("已导出 PNG（" + resultBytes(resultCanvas) + "）", "ok");
+      setStatus("已导出 " + format.toUpperCase() + "（" + resultBytes(resultCanvas) + " · " + formatBytes(blob.size) + "）", "ok");
+    });
+
+    exportFormat.addEventListener("change", function () {
+      exportBtn.textContent = "下载 " + exportFormat.value.toUpperCase();
     });
 
     function resultBytes(cv) {
