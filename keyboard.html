@@ -44,7 +44,7 @@
     a { color: var(--accent); text-decoration: none; }
     a:hover { text-decoration: underline; }
 
-    .wrap { width: 100%; max-width: 1012px; margin: 0 auto; padding: 0 16px; }
+    .wrap { width: 100%; max-width: 1100px; margin: 0 auto; padding: 0 16px; }
 
     :focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
 
@@ -392,39 +392,21 @@ var DATA = [
         items: [
           {
             kind: "键盘",
-            name: "黑吉蛇DK75PRO三模RGB白色",
+            name: "黑吉蛇DK75PRO",
             state: "2.4G 已连接",
             stateClass: "on",
             chips: ["75% 配列", "三模"],
             specs: [
-              ["蓝牙名", "XXX", "mono"],
-              ["接收器名", "XXX", "mono"],
+              ["蓝牙名", "待补", "todo"],
+              ["接收器名", "Gaming KB", "mono"],
               ["连接", "2.4G / 蓝牙 / USB-C 有线"],
               ["配列", "75%，右侧导航列 + 独立方向键"],
               ["轴体", "灰木V3"],
-              ["键帽", "待补", "todo"],
+              ["键帽", "牛奶键帽", "mono"],
               ["电池", "8000 mAh"],
-              ["Mac模式", "有"]
+              ["Mac模式", "有，但需要在系统设置-键盘-修饰键中对调 ⌥ Option 和 ⌘ Command"]
             ],
-            note: ""
-          },
-          {
-            kind: "键盘",
-            name: "维咖 K75",
-            state: "2.4G 未连接",
-            stateClass: "warn",
-            chips: ["75% 配列", "三模"],
-            specs: [
-              ["蓝牙名", "BT5.0 KB，BT3.0 KB", "mono"],
-              ["接收器名", "2.4G Wireless Receiver", "mono"],
-              ["连接", "2.4G / 蓝牙 / USB-C 有线"],
-              ["配列", "75%，右侧导航列 + 独立方向键"],
-              ["轴体", "灰木V4"],
-              ["键帽", "待补", "todo"],
-              ["电池", "4000 mAh"],
-              ["Mac模式", "有"]
-            ],
-            note: "Fn + | = 切换灯光模式（回车上面那个键）\nFn + ↑ = 灯光亮度 +\nFn + ↓ = 灯光亮度 -\nFn + ← = 动态灯光方向切换\nFn + → = 切换背光颜色\nFn + -_ = 灯光速度 -\nFn + += = 灯光速度 +\nFn + X = 打开灯光/关闭灯光\nFn + Q/W/E = 波动开关到BT位置后，长按Fn + Q/W/E 组合键3秒配对（灯白光快闪进入对码模式）"
+            note: "灯光设定\n- FN+\\| 灯效切换\n- FN+PGUP 切换灯光颜色\n- FN+PGDN 自定义灯光\n- FN+TAB 切换侧灯模式\n- FN+BackSpace 同时打开or关闭背光和侧发光灯光\n- FN+SPACE 一键白光模式\n- FN+↑\\↓ 灯光亮度调节\n- FN+→\\← 灯光速度调节"
           },
           {
             kind: "键盘",
@@ -434,13 +416,13 @@ var DATA = [
             chips: ["75% 配列", "三模", "冬瓜白"],
             specs: [
               ["蓝牙名", "AKK0 PC75 BT3.0", "mono"],
-              ["接收器名", "已丢，待补", "todo"],
-              ["连接", "蓝牙 / 2.4G / USB-C 有线"],
-              ["配列", "75%，右侧导航列 + 独立方向键"],
+              ["接收器名", "Akko 2.4G Wireless Keyboard"],
+              ["连接", "2.4G / 蓝牙 / USB-C 有线"],
+              ["配列", "75%"],
               ["轴体", "灰木V3（字母区）+ 青轴（F1-F12/方向键）+ G黄Pro（其他）"],
               ["键帽", "待补", "todo"],
-              ["电池", "4000 mAh", "mono"],
-              ["Mac模式", "有"]
+              ["电池", "3000 mAh", "mono"],
+              ["Mac模式", "有，但需要在系统设置-键盘-修饰键中对调 ⌥ Option 和 ⌘ Command"]
             ],
             note: "Fn + E = 蓝牙设备1\nFn + R = 蓝牙设备2\nFn + T = 蓝牙设备3\nFn + Y = 2.4G设备\nFn + U = 有线模式\nFn + 左Win = 禁用或启用Windows键\nFn + ~(按住5秒) = 恢复出厂设置\nFn + ↑ = 灯光亮度 +\nFn + ↓ = 灯光亮度 -\nFn + ← = 灯光方向向左\nFn + → = 灯光方向向右\nFn + - = 灯光速度 -\nFn + + = 灯光速度 +\nFn + Z = 侧边灯光亮度切换\nFn + X = 侧边灯光亮度切换 \nFn + 左Ctrl = 侧边灯光模式切换\n\n当 E/R/T 键下方的蓝色LED快速闪烁时，键盘将进入蓝牙配对模式。\n按住 Fn+E / Fn+R / Fn+T / Fn+Y 至少3秒钟即可在它们之间快速切换。\n当键盘通过 USB 接口连接到电脑时，无需按下背面的开关，键盘将自动进入蓝牙模式。用户可以直接长按 Fn + E/R/T 开启蓝牙配对。当 E / R / T 键下方的蓝色 LED快速闪烁时，键盘将进入蓝牙配对模式。首次搜索蓝牙设备时，系统会显示两组设备名称：\nAkko PC75 BT3.0（蓝牙 3.0）和 Akko PC75-1（蓝牙 5.0）。\n蓝牙 5.0 框架中的设备名称为 Akko PC75 BT-1 / Akko PC75 BT-2 / Akko PC75 BT-3\n蓝牙 3.0 中的设备名称为 AKK0 PC75 BT3.0"
           },
@@ -461,7 +443,25 @@ var DATA = [
               ["Mac模式", "无，需要在系统设置-键盘-修饰键中对调 ⌥ Option 和 ⌘ Command"]
             ],
             note: "默认蓝牙设备名：BT+2.4G KB\n2.4G 无线连接模式：\nFn + Q = 2.4G\nFn + W = 蓝牙设备 1\nFn + E = 蓝牙设备 2\nFn + W / E 5秒则为对应按键的蓝牙配对。蓝牙配对完成后，短按Fn+W或E键则为蓝牙设备之间的切换。\n\nFn + 1 = F1\nFn + 2 = F2\nFn + 3 = F3\nFn + 4 = F4\nFn + 5 = F5\nFn + 6 = F6\nFn + 7 = F7\nFn + 8 = F8\nFn + 9 = F9\nFn + 0 = F10\nFn + -_ = F11\nFn + += = F11\nFn + PgUp = Home\nFn + PgDn = End"
-          }
+          },
+          {
+            kind: "键盘",
+            name: "维咖 K75",
+            state: "2.4G 未连接",
+            stateClass: "warn",
+            chips: ["75% 配列", "三模"],
+            specs: [
+              ["蓝牙名", "BT5.0 KB，BT3.0 KB", "mono"],
+              ["接收器名", "2.4G Wireless Receiver", "mono"],
+              ["连接", "2.4G / 蓝牙 / USB-C 有线"],
+              ["配列", "75%"],
+              ["轴体", "灰木V4"],
+              ["键帽", "待补", "todo"],
+              ["电池", "4000 mAh"],
+              ["Mac模式", "有"]
+            ],
+            note: "Fn + | = 切换灯光模式（回车上面那个键）\nFn + ↑ = 灯光亮度 +\nFn + ↓ = 灯光亮度 -\nFn + ← = 动态灯光方向切换\nFn + → = 切换背光颜色\nFn + -_ = 灯光速度 -\nFn + += = 灯光速度 +\nFn + X = 打开灯光/关闭灯光\nFn + Q/W/E = 波动开关到BT位置后，长按Fn + Q/W/E 组合键3秒配对（灯白光快闪进入对码模式）"
+          },
         ]
       },
       {
@@ -478,7 +478,7 @@ var DATA = [
             specs: [
               ["蓝牙名", "不支持", "mono"],
               ["接收器名", "Wireless-Receiver（SSCYPL, VID 0x248A）", "mono"],
-              ["连接", "USB 2.4G / 有线"],
+              ["连接", "2.4G / 有线"],
               ["DPI", "800/1600/2400/3200/6400/26000（6档，可自定义）"],
               ["回报率", "最高支持 1000Hz，响应速度约为 0.001，原相 PAW3395 传感器，最高支持 650 IPS 追踪速度、50G 加速度", "mono"],
               ["电池", "内置 600mAh 锂电池", "mono"]
@@ -494,7 +494,7 @@ var DATA = [
             specs: [
               ["蓝牙名", "VXE R1SE+（可自定义）", "mono"],
               ["接收器名", "VXE Mouse 1K Dongle", "mono"],
-              ["连接", "USB 2.4G / 蓝牙 / 有线"],
+              ["连接", "2.4G / 蓝牙 / 有线"],
               ["DPI", "最高 18000DPI（可自定义）"],
               ["回报率", "支持 1000Hz，PAW3395SE 传感器，支持 400IPS 追踪速度和 40G 加速度", "mono"],
               ["电池", "内置 520mAh 电池", "mono"],
