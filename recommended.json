@@ -1,0 +1,104 @@
+{
+  "schemaVersion": 1,
+  "updatedAt": "2026-11-15",
+  "categories": [
+    {
+      "id": "tech",
+      "name": "技术",
+      "podcasts": [
+        {
+          "title": "捕蛇者说",
+          "author": "pythonhunter",
+          "description": "《捕蛇者说》是一档以编程为主题的聊天节目。我们会聊聊编程、程序员和 Python。",
+          "imageUrl": "https://i.typlog.com/pythonhunter/8444690454_041962.png?x-oss-process=style/sl",
+          "link": "https://pythonhunter.org/",
+          "feedUrl": "https://pythonhunter.org/feed/audio.xml"
+        },
+        {
+          "title": "The Changelog: Software Development, Open Source",
+          "author": "Changelog Media",
+          "description": "Software's best weekly news brief, deep technical interviews & talk show.",
+          "imageUrl": "https://cdn.changelog.com/static/images/podcasts/podcast-original-f16d0363067166f241d080ee2e2d4a28.png",
+          "link": "https://changelog.com/podcast",
+          "feedUrl": "https://changelog.com/podcast/feed"
+        },
+        {
+          "title": "Syntax - Tasty Web Development Treats",
+          "author": "Wes Bos & Scott Tolinski - Full Stack JavaScript Web Developers",
+          "description": "Full Stack Developers Wes Bos and Scott Tolinski dive deep into web development topics, explaining how they work and talking about their own experiences. They cover from JavaScript frameworks like React, to the latest advancements in CSS to simplifying web tooling.",
+          "imageUrl": "https://megaphone.imgix.net/podcasts/5197fe5a-42f7-11f0-affd-87d9985a1760/image/c86a54acd72683732c4773e25bf0ae14.png?ixlib=rails-4.3.1&max-w=3000&max-h=3000&fit=crop&auto=format,compress",
+          "link": "https://syntax.fm",
+          "feedUrl": "https://feed.syntax.fm"
+        },
+        {
+          "title": "Software Engineering Radio - the podcast for professional software developers",
+          "author": "SE-Radio Team",
+          "description": "Software Engineering Radio is a podcast targeted at the professional software developer. The goal is to be a lasting educational resource, not a newscast. SE Radio covers all topics software engineering. Episodes are either tutorials on a specific topic, or an interview with a well-known character from the software engineering world. All SE Radio episodes are original content — we do not record conferences or talks given in other venues. SE Radio is brought to you by the IEEE Computer Society and IEEE Software magazine.",
+          "imageUrl": "https://static.libsyn.com/p/assets/6/2/0/7/62079f6bc79bbf41e5bbc093207a2619/SE-radio-apple-show-cover-3000x3000.png",
+          "link": "https://www.se-radio.net",
+          "feedUrl": "https://rss.libsyn.com/shows/21070/destinations/23379.xml"
+        }
+      ]
+    },
+    {
+      "id": "ai",
+      "name": "AI",
+      "podcasts": [
+        {
+          "title": "Latent Space: The AI Engineer Podcast",
+          "author": "Latent.Space",
+          "description": "The main Latent Space podcast: AI engineering, Forward Deployed Engineering, AI for science, and ⚡ Lightning episodes. Other feeds: Engineering and FDE: https://podcast.latent.space/eng.xml; Science: https://podcast.latent.space/science.xml; Misc (Lightning and other shows): https://podcast.latent.space/misc.xml; Firehose (all available shows): https://podcast.latent.space/firehose.xml. Feed directory: https://latent.space/pods",
+          "imageUrl": "https://media.beehiiv.com/cdn-cgi/image/fit=scale-down,format=auto,onerror=redirect,quality=80/uploads/asset/file/d4933544-aa8c-47f8-a092-ec3775a7abd9/podcast_artwork_20261021-241-xyrobd.jpg?t=1792609818",
+          "link": "https://www.latent.space/podcast",
+          "feedUrl": "https://podcast.latent.space/feed.xml"
+        },
+        {
+          "title": "Practical AI",
+          "author": "Daniel Whitenack and Chris Benson",
+          "description": "Making artificial intelligence practical, productive & accessible to everyone. Practical AI is a show in which technology professionals, business people, students, enthusiasts, and expert guests engage in lively discussions about Artificial Intelligence and related topics (Machine Learning, Deep Learning, Neural Networks, GANs, MLOps, AIOps, LLMs & more). The focus is on productive implementations and real-world scenarios that are accessible to everyone. If you want to keep up with the latest advances in AI, while keeping one foot in the real world, then this is the show for you!",
+          "imageUrl": "https://img.transistorcdn.com/WMlp2ug34XB6LDJ3-vnzti_-_y144LUlFW0Xzzn3fss/rs:fill:0:0:1/w:1400/h:1400/q:60/mb:500000/aHR0cHM6Ly9pbWct/dXBsb2FkLXByb2R1/Y3Rpb24udHJhbnNp/c3Rvci5mbS8wMTZi/ZWJmNWIwNDdmYTcw/NGJjMTExZjNjZmYy/M2ZjNS5wbmc.jpg",
+          "link": "https://practicalai.show/",
+          "feedUrl": "https://feeds.transistor.fm/practical-ai-machine-learning-data-science-llm"
+        },
+        {
+          "title": "Lex Fridman Podcast",
+          "author": "Lex Fridman",
+          "description": "Conversations that explore technology, history, philosophy, physics, mathematics, biology, chemistry, engineering, AI, robotics, programming, music, film, art, sports, psychology, neuroscience, geopolitics, business, economics, religion, astronomy, and the human condition with people from all walks of life.",
+          "imageUrl": "https://lexfridman.com/wordpress/wp-content/uploads/powerpress/lex_fridman_podcast_cover_3000.jpg",
+          "link": "https://lexfridman.com/",
+          "feedUrl": "https://lexfridman.com/feed/podcast/"
+        }
+      ]
+    },
+    {
+      "id": "emotion",
+      "name": "情感与心理",
+      "podcasts": [
+        {
+          "title": "故事FM",
+          "author": "寇爱哲",
+          "description": "欢迎收听故事FM 。在这里，我们用你的声音，讲述你的故事。合作邮箱：bd@storyfm.cn",
+          "imageUrl": "https://media-one.wavpub.com/covers/1ebcbf5d-9dd2-4b69-b681-b54c22541cf2/977035cf6ab63b6e.png",
+          "link": "https://storyfm.cn/",
+          "feedUrl": "https://feeds.storyfm.cn/storyfm.xml"
+        },
+        {
+          "title": "Hidden Brain",
+          "author": "Hidden Brain, Shankar Vedantam",
+          "description": "Why do I feel stuck? How can I become more creative? What can I do to improve my relationships? If you’ve ever asked yourself these questions, you’re not alone. On Hidden Brain, we help you understand your own mind — and the minds of the people around you. (We're routinely rated the #1 science podcast in the United States.) Hosted by veteran science journalist Shankar Vedantam.",
+          "imageUrl": "https://image.simplecastcdn.com/images/5982e1b7-239c-4b89-81f9-49df1f33fdae/dd71b17c-82bb-441d-a979-e16975aebc1c/3000x3000/hbtilewshankarfinal_rgbsimplecast.jpg?aid=rss_feed",
+          "link": "https://www.siriusxm.com",
+          "feedUrl": "https://feeds.simplecast.com/kwWc0lhf"
+        },
+        {
+          "title": "Where Should We Begin? with Esther Perel",
+          "author": "Esther Perel Global Media",
+          "description": "Every Monday morning step into the office of iconic psychotherapist Esther Perel on \"Where Should We Begin\" and listen in as real people in search of insight bare the raw, intimate, and profound details of their stories. From breakups and open relationships to workplace conflicts and fractures in the family, it’s a place to hear our own stories reflected in the lives of others. So…where should we begin? For an ad-free version of our podcast, plus bonus episodes, behind-the-scenes content, and more, visit our Office Hours section.",
+          "imageUrl": "https://megaphone.imgix.net/podcasts/dd65f90e-de0e-11e9-8b0b-87cd49a18ce9/image/8abd16a39e6ae31ee32367a4831e2c14.jpg?ixlib=rails-4.3.1&max-w=3000&max-h=3000&fit=crop&auto=format,compress",
+          "link": "https://estherperel.com/podcast",
+          "feedUrl": "https://feeds.megaphone.fm/ep-wswb"
+        }
+      ]
+    }
+  ]
+}
