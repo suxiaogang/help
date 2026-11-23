@@ -352,7 +352,7 @@
           <div class="icon">🗜️</div>
           <div class="text"><b>点击选择图片</b>，可多选；或拖拽到这里<br />也可 Ctrl/⌘ + V 粘贴</div>
         </div>
-        <input type="file" id="fileInput" accept="image/*" multiple />
+        <input type="file" id="fileInput" accept="image/*,.heic,.heif" multiple />
       </div>
 
       <div class="scroll">
@@ -604,6 +604,103 @@
   }
 
   /* =========================================================
+     HEIC / HEIF 支持
+     ------------------------------------------------------------
+     iPhone 导出的 .heic 大多数浏览器解不了（Safari 新版除外）。
+     先走原生 decode，失败再按需加载 libheif-js（libheif 的 wasm
+     封装，自带解码器，约 2MB，仅在遇到 HEIC 时才拉取），
+     解码后转成 JPEG 位图再走统一管线。
+     注：heic2any 内置的 libheif 版本太老，解不了 iOS 18 新导出的
+     HEIC（报 "Could not parse HEIF file"），所以直接用新版 libheif-js。
+     ========================================================= */
+  function isHeicFile(f) {
+    return /hei[cf]/i.test(f.type) || /\.(heic|heif)$/i.test(f.name);
+  }
+
+  var HEIC_CDNS = [
+    "https://cdn.jsdelivr.net/npm/libheif-js@1.23.5/libheif-wasm/libheif-bundle.js",
+    "https://unpkg.com/libheif-js@1.23.5/libheif-wasm/libheif-bundle.js"
+  ];
+
+  function loadScript(src) {
+    return new Promise(function (resolve, reject) {
+      var s = document.createElement("script");
+      s.src = src;
+      s.onload = function () {
+        window.libheif ? resolve(window.libheif)
+                       : reject(new Error("HEIC 解码库加载异常"));
+      };
+      s.onerror = function () { reject(new Error("CDN 不可达：" + src)); };
+      document.head.appendChild(s);
+    });
+  }
+
+  var libheifPromise = null;
+  function loadLibheif() {
+    if (!libheifPromise) {
+      libheifPromise = (function tryCdn(i) {
+        if (i >= HEIC_CDNS.length) {
+          return Promise.reject(new Error("HEIC 解码库加载失败，请检查网络"));
+        }
+        return loadScript(HEIC_CDNS[i]).catch(function () { return tryCdn(i + 1); });
+      })(0);
+    }
+    return libheifPromise;
+  }
+
+  // libheif 解码 HEIC → 显示到 canvas → JPEG blob → 再解码成位图
+  // 返回 { img, preview }：preview 是能被 <img> 直接显示的源
+  function decodeHeic(f) {
+    return loadLibheif().then(function (g) {
+      // wasm-bundle 暴露的是模块工厂，调用后返回 Promise<module>；
+      // 兼容它直接就是 module 的情况
+      var inst = (typeof g === "function" && !g.HeifDecoder) ? g() : g;
+      return Promise.resolve(inst);
+    }).then(function (lib) {
+      return f.arrayBuffer().then(function (buf) {
+        var decoder = new lib.HeifDecoder();
+        var handles = decoder.decode(new Uint8Array(buf));
+        if (!handles || !handles.length) throw new Error("HEIC 中没有图像");
+        // HEIC 里可能附带缩略图等衍生图，取像素最多的那张
+        var h = handles.reduce(function (a, b) {
+          return b.get_ispe_width() * b.get_ispe_height()
+               > a.get_ispe_width() * a.get_ispe_height() ? b : a;
+        });
+        var w = h.get_width(), hh = h.get_height();
+        var canvas = document.createElement("canvas");
+        canvas.width = w; canvas.height = hh;
+        var ctx = canvas.getContext("2d");
+        var imageData = ctx.createImageData(w, hh);
+        return new Promise(function (resolve, reject) {
+          h.display(imageData, function (data) {
+            if (!data) return reject(new Error("HEIC 图像解码失败"));
+            ctx.putImageData(imageData, 0, 0);
+            canvas.toBlob(function (blob) {
+              blob ? resolve(blob) : reject(new Error("HEIC 转 JPEG 失败"));
+            }, "image/jpeg", 0.95);
+          });
+        });
+      });
+    }).then(function (blob) {
+      return decode(blob).then(function (bmp) {
+        return { img: bmp, preview: blob };
+      });
+    });
+  }
+
+  // 返回 { img, preview }：preview 是能被 <img> 直接显示的源
+  // （HEIC 转码后浏览器认不出原文件，得用转出的 JPEG 预览）
+  function decodeMaybeHeic(f) {
+    if (!isHeicFile(f)) {
+      return decode(f).then(function (img) { return { img: img, preview: f }; });
+    }
+    return decode(f).then(
+      function (img) { return { img: img, preview: f }; },
+      function () { return decodeHeic(f); }
+    );
+  }
+
+  /* =========================================================
      工具
      ========================================================= */
   function humanSize(n) {
@@ -618,7 +715,9 @@
   function niceType(type) {
     return { "image/webp": "WebP", "image/jpeg": "JPEG", "image/png": "PNG",
              "image/gif": "GIF", "image/bmp": "BMP", "image/avif": "AVIF",
-             "image/svg+xml": "SVG", "image/tiff": "TIFF" }[type] || type.replace("image/", "").toUpperCase();
+             "image/svg+xml": "SVG", "image/tiff": "TIFF",
+             "image/heic": "HEIC", "image/heif": "HEIF" }[type]
+      || (type ? type.replace("image/", "").toUpperCase() : "");
   }
   function setStatus(t) { statusText.textContent = t; }
 
@@ -722,15 +821,19 @@
      ========================================================= */
   function addFiles(list) {
     var arr = Array.prototype.slice.call(list).filter(function (f) {
-      return /^image\//.test(f.type) || /\.(png|jpe?g|webp|gif|bmp|avif|svg)$/i.test(f.name);
+      return /^image\//.test(f.type) || isHeicFile(f)
+        || /\.(png|jpe?g|webp|gif|bmp|avif|svg)$/i.test(f.name);
     });
     if (!arr.length) { setStatus("没有可处理的图片文件"); return; }
 
+    setStatus("正在解码 " + arr.length + " 张图片…");
     Promise.all(arr.map(function (f) {
-      return decode(f).then(function (img) {
-        return { file: f, img: img, alpha: detectAlpha(img) };
-      }).catch(function () {
-        return { file: f, img: null, alpha: false, err: "解码失败" };
+      return decodeMaybeHeic(f).then(function (res) {
+        return { file: f, img: res.img, preview: res.preview,
+                 alpha: detectAlpha(res.img) };
+      }).catch(function (e) {
+        return { file: f, img: null, alpha: false,
+                 err: (e && e.message) || (e ? String(e) : "解码失败") };
       });
     })).then(function (items) {
       items.forEach(function (it) {
@@ -741,6 +844,7 @@
           size: it.file.size,
           type: it.file.type,
           img: it.img,
+          preview: it.preview || it.file,
           alpha: it.alpha,
           err: it.err || null,
           out: null
@@ -979,10 +1083,11 @@
     cmpWrap.hidden = false;
 
     document.getElementById("srcType").textContent =
-      niceType(f.type) + " · " + f.img.width + "×" + f.img.height;
+      (niceType(f.type) || f.name.split(".").pop().toUpperCase())
+      + " · " + f.img.width + "×" + f.img.height;
     document.getElementById("srcSize").textContent = humanSize(f.size);
 
-    stageImg(document.getElementById("srcStage"), f.file);
+    stageImg(document.getElementById("srcStage"), f.preview || f.file);
 
     document.getElementById("dstType").textContent =
       niceType(fmt) + (fmt === "image/png" ? "（无损）" : " · 质量 " + quality.toFixed(2));
